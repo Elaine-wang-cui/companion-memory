@@ -515,7 +515,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       if (url.pathname.endsWith("/garden/backfill")) {
         if (!env.AI) return json({ error: "no_ai" }, 500);
         const max = Math.min(Number(url.searchParams.get("max")) || 400, 800);
-        return json(await gardenBackfill(env.DB, env.AI, max, url.searchParams.get("relink") !== "0"));
+        return json(await gardenBackfill(env.DB, env.AI, max, url.searchParams.get("relink") === "1" ? "always" : false));
       }
       if (request.method.toUpperCase() !== "POST") return json({ error: "method" }, 405);
       if (!env.AI) return json({ error: "no_ai" }, 500);

@@ -65,6 +65,7 @@ export async function ensureGardenLinksSchema(db: MemoryDb) {
     `CREATE TABLE IF NOT EXISTS garden_embeddings (node TEXT PRIMARY KEY, persona TEXT NOT NULL, model TEXT NOT NULL, dim INTEGER NOT NULL, vec TEXT NOT NULL, text_len INTEGER NOT NULL, updated_at TEXT NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS garden_links (a TEXT NOT NULL, b TEXT NOT NULL, weight REAL NOT NULL CHECK (weight >= 0 AND weight <= 1), kind TEXT NOT NULL CHECK (kind IN ('semantic','time')), created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (a, b), CHECK (a < b))`,
     `CREATE INDEX IF NOT EXISTS idx_garden_links_b ON garden_links(b)`,
+    `CREATE TABLE IF NOT EXISTS garden_embed_failed (node TEXT PRIMARY KEY, failed_at TEXT NOT NULL)`,
   ]) await db.prepare(s).run();
 }
 
@@ -91,23 +92,41 @@ async function memoryNodes(db: MemoryDb): Promise<Node[]> {
 }
 
 /** 补花园向量（最多 max 条），然后全量重算花园连线。 */
-export async function gardenBackfill(db: MemoryDb, ai: NonNullable<Env["AI"]>, max = 400, relink = true) {
+/** relink: false=不连线；true=仅当本轮新增了向量时连线；"always"=强制（差异写入）重算。 */
+export async function gardenBackfill(db: MemoryDb, ai: NonNullable<Env["AI"]>, max = 400, relink: boolean | "always" = true) {
   await ensureGardenLinksSchema(db);
   const items = await gardenItems(db);
   const have = new Map((await q<{ node: string; vec: string }>(db, `SELECT node, vec FROM garden_embeddings WHERE model = ?`, EMBED_MODEL)).map((r) => [r.node, r.vec]));
-  const missing = items.filter((i) => !have.has(i.key) && clip(i.text, 10).length >= 2).slice(0, max);
+  const failed = new Set((await q<{ node: string }>(db, `SELECT node FROM garden_embed_failed`)).map((r) => r.node));
+  const missing = items.filter((i) => !have.has(i.key) && !failed.has(i.key) && clip(i.text, 10).length >= 2).slice(0, max);
+  let added = 0;
   const now = new Date().toISOString();
   for (let i = 0; i < missing.length; i += 24) {
     const batch = missing.slice(i, i + 24);
-    const r = (await ai.run(EMBED_MODEL, { text: batch.map((x) => clip(`${x.title}\n${x.text}`, GARDEN_EMBED_CLIP)) })) as { data?: number[][] };
-    if (!r?.data || r.data.length !== batch.length) throw new Error("embedding failed");
-    const st = batch.map((x, j) => { const b64 = enc(r.data![j]!); have.set(x.key, b64);
-      return db.prepare(`INSERT OR REPLACE INTO garden_embeddings (node, persona, model, dim, vec, text_len, updated_at) VALUES (?,?,?,?,?,?,?)`).bind(x.key, x.persona, EMBED_MODEL, r.data![j]!.length, b64, x.text.length, now); });
+    const text = (x: GItem) => clip(`${x.title}\n${x.text}`, GARDEN_EMBED_CLIP);
+    let vecs: (number[] | null)[];
+    try {
+      const r = (await ai.run(EMBED_MODEL, { text: batch.map(text) })) as { data?: number[][] };
+      if (!r?.data || r.data.length !== batch.length) throw new Error("embedding failed");
+      vecs = r.data;
+    } catch {
+      // 整批失败：逐条重试，仍失败的记为永久失败，cron 不再每轮重试
+      vecs = [];
+      for (const x of batch) {
+        try { const r = (await ai.run(EMBED_MODEL, { text: [text(x)] })) as { data?: number[][] }; vecs.push(r?.data?.[0] ?? null); } catch { vecs.push(null); }
+      }
+    }
+    const st: ReturnType<MemoryDb["prepare"]>[] = [];
+    batch.forEach((x, j) => { const v = vecs[j];
+      if (!v || !v.length) { failed.add(x.key); st.push(db.prepare(`INSERT OR REPLACE INTO garden_embed_failed (node, failed_at) VALUES (?, ?)`).bind(x.key, now)); return; }
+      const b64 = enc(v); have.set(x.key, b64); added++;
+      st.push(db.prepare(`INSERT OR REPLACE INTO garden_embeddings (node, persona, model, dim, vec, text_len, updated_at) VALUES (?,?,?,?,?,?,?)`).bind(x.key, x.persona, EMBED_MODEL, v.length, b64, x.text.length, now)); });
     await batchRun(db, st);
   }
   let linkInfo = {};
-  if (relink && GARDEN_LINKS_ENABLED) linkInfo = await relinkGarden(db, items, have, now);
-  return { items: items.length, embedded_now: missing.length, with_vectors: items.filter((i) => have.has(i.key)).length, remaining: items.filter((i) => !have.has(i.key) && clip(i.text, 10).length >= 2).length, ...linkInfo };
+  const doRelink = relink === "always" || (relink === true && added > 0);
+  if (doRelink && GARDEN_LINKS_ENABLED) linkInfo = await relinkGarden(db, items, have, now);
+  return { items: items.length, embedded_now: added, failed_now: missing.length - added, with_vectors: items.filter((i) => have.has(i.key)).length, remaining: items.filter((i) => !have.has(i.key) && !failed.has(i.key) && clip(i.text, 10).length >= 2).length, relinked: doRelink, ...linkInfo };
 }
 
 async function relinkGarden(db: MemoryDb, items: GItem[], have: Map<string, string>, now: string) {
@@ -141,9 +160,18 @@ async function relinkGarden(db: MemoryDb, items: GItem[], have: Map<string, stri
     for (const g of list) { if (g.key.startsWith("memory:")) continue; let c = 0;
       for (const o of list) { if (c >= GARDEN_TIME_LINK_MAX) break; if (o === g) continue; const id = g.key < o.key ? `${g.key}|${o.key}` : `${o.key}|${g.key}`; if (edges.has(id)) continue; put(g.key, o.key, GARDEN_TIME_LINK_W, "time"); c++; } }
   }
-  await db.prepare(`DELETE FROM garden_links`).run();
-  await batchRun(db, [...edges].map(([id, e]) => { const [a, b] = id.split("|"); return db.prepare(`INSERT INTO garden_links (a, b, weight, kind, created_at, updated_at) VALUES (?,?,?,?,?,?)`).bind(a, b, e.w, e.k, now, now); }));
-  return gardenLinkStats(db);
+  // 只写差异：与现有行比对，删掉消失的边、upsert 新增/变化的边（结果与全量重建一致，但写入少得多）
+  const existing = new Map((await q<{ a: string; b: string; weight: number; kind: string }>(db, `SELECT a, b, weight, kind FROM garden_links`)).map((r) => [`${r.a}|${r.b}`, r]));
+  const stmts: ReturnType<MemoryDb["prepare"]>[] = [];
+  for (const id of existing.keys()) if (!edges.has(id)) { const [a, b] = id.split("|"); stmts.push(db.prepare(`DELETE FROM garden_links WHERE a = ? AND b = ?`).bind(a, b)); }
+  for (const [id, e] of edges) {
+    const o = existing.get(id);
+    if (o && o.kind === e.k && Math.abs(Number(o.weight) - e.w) < 1e-9) continue;
+    const [a, b] = id.split("|");
+    stmts.push(db.prepare(`INSERT INTO garden_links (a, b, weight, kind, created_at, updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(a, b) DO UPDATE SET weight = excluded.weight, kind = excluded.kind, updated_at = excluded.updated_at`).bind(a, b, e.w, e.k, now, now));
+  }
+  await batchRun(db, stmts);
+  return { ...(await gardenLinkStats(db)), links_written: stmts.length };
 }
 
 export async function gardenLinkStats(db: MemoryDb) {
@@ -160,9 +188,9 @@ export async function cronGarden(db: MemoryDb, ai: NonNullable<Env["AI"]> | unde
   if (!ai || !GARDEN_LINKS_ENABLED) return;
   await ensureGardenLinksSchema(db);
   const items = await gardenItems(db);
-  const n = (await db.prepare(`SELECT COUNT(*) n FROM garden_embeddings`).first<{ n: number }>())?.n ?? 0;
-  const embeddable = items.filter((i) => clip(i.text, 10).length >= 2).length;
-  if (n >= embeddable) return;
+  const have = new Set((await q<{ node: string }>(db, `SELECT node FROM garden_embeddings WHERE model = ?`, EMBED_MODEL)).map((r) => r.node));
+  const failed = new Set((await q<{ node: string }>(db, `SELECT node FROM garden_embed_failed`)).map((r) => r.node));
+  if (!items.some((i) => !have.has(i.key) && !failed.has(i.key) && clip(i.text, 10).length >= 2)) return;
   await gardenBackfill(db, ai, 40, true);
 }
 
