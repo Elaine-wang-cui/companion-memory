@@ -1,0 +1,7 @@
+node_modules
+.wrangler
+*.bak*
+wrangler.toml
+secrets.local.json
+.dev.vars
+*.zip

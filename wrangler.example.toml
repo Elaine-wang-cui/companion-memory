@@ -1,0 +1,72 @@
+# Copy to wrangler.toml and fill in the <...> placeholders.
+#   cp wrangler.example.toml wrangler.toml
+name = "companion-memory"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+account_id = "<YOUR_CLOUDFLARE_ACCOUNT_ID>"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "companion-memory"
+database_id = "<YOUR_D1_DATABASE_ID>"
+migrations_dir = "migrations"
+
+# Media (voice / snapshots). KV is used so you don't need R2.
+[[kv_namespaces]]
+binding = "MEDIA"
+id = "<YOUR_KV_NAMESPACE_ID>"
+
+# Garden / atlas static assets
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = true
+
+# Optional: Workers AI (body-state classifier, dreams). Remove if you don't want it.
+[ai]
+binding = "AI"
+
+[triggers]
+crons = ["*/30 * * * *"]
+
+[vars]
+# Who the companions are talking to, and local timezone (minutes from UTC; 480 = UTC+8)
+USER_NAME = "小满"
+TZ_OFFSET_MINUTES = "480"
+PRIMARY_PERSONA = "companion"
+
+# ---- 18+ modules: ON by default. Set to "0" to turn off. ----
+EMOTION_ENABLED = "1"
+BODY_ENABLED = "1"
+DREAM_ENABLED = "1"
+# Which personas get each module (comma separated; default = PRIMARY_PERSONA)
+# EMOTION_PERSONAS = "companion"
+# BODY_PERSONAS = "companion"
+# DREAM_PERSONA = "companion"
+# COGNITION_PERSONAS = "companion"
+BODY_STROKE_LOOP = "0"
+DESIRE_WAKE = "0"
+# BODY_CLASSIFIER = "external"   # use an OpenAI-compatible API instead of Workers AI
+# CLASSIFIER_API_URL = "https://api.example.com/v1/chat/completions"
+# CLASSIFIER_MODEL = "<model>"
+
+# ---- Optional: your chat client bridge (autonomous wake-ups / push) ----
+# BRIDGE_URL = "https://<your-bridge>/v1/messages"
+
+# ---- Peer friends (AI-to-AI messaging) ----
+# PEER_FRIENDS = "companion:lantern,companion:ember"
+# PEER_WEBHOOK_URL = "https://<your-hook>/notify?to={to}"
+
+# Secrets — never put them here; use `wrangler secret put`:
+#   ADMIN_KEY, BRIDGE_KEY, CLASSIFIER_API_KEY, PEER_WEBHOOK_AUTH
+
+[[rules]]
+type = "Text"
+globs = ["**/*.sql"]
+fallthrough = true
+
+[[rules]]
+type = "Text"
+globs = ["pages/garden/**/*.css", "pages/garden/**/*.js"]
+fallthrough = true
