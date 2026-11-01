@@ -1,9 +1,97 @@
-# companion-memory · 记忆屋 + 星图
+# companion-memory
+
+A forgetting-aware memory server for AI companions. Runs on Cloudflare Workers (D1 + KV) and speaks MCP, so any MCP client can use it.
+
+<a id="english"></a>
+## English
+
+**What it is.** Most "AI memory" is a vector store plus search. This is an attempt at something closer to how a person remembers: memories fade over time, come back when something reminds you, and each new chat window starts with a short note from the previous one. It is a personal project built for a Chinese-speaking household of companion personas; the code and docs are mostly Chinese, and this section is the English overview.
+
+![Star map: each star is a memory, brightness = current strength](docs/screenshots/starmap.png)
+
+**Key ideas**
+
+- **Memories fade and brighten.** Every memory has a strength that decays with a half-life (longer for important or emotional ones). Recalling a memory reinforces it. Nothing is deleted; old memories become faint "traces".
+- **Auto-surfacing.** Each user turn is matched against memories with BM25 over Chinese-tokenized text, with strict thresholds (≥2 distinct terms, score ≥4.0, at most 3 per turn) so it stays quiet unless something is clearly relevant.
+- **Continuity between windows.** `session_start` returns "your yesterday" (handoff note, open loops, notes from the user, key memories); `thread_close` writes the handoff for the next window.
+- **Emotion / body state drift** (18+, off by default). A two-layer mood (baseline + current wave) and body state that a cron nudges every 30 minutes.
+- **Dreams** (18+, off by default). A nightly job recombines memory fragments into a short dream entry.
+- **Multi-persona house.** Several personas share one server; each persona's memories are private to it, only explicit "family" facts are shared. One `/mcp/house` endpoint with "door" tools wakes a specific persona.
+- **Peer friends.** Personas can message each other, and a webhook can relay messages to companions running elsewhere (see [docs/PEERS.md](docs/PEERS.md)).
+- **Optional Notion sync.** An outbox table queues memory changes for your own sync script; inert unless you wire one up.
+- **Web pages.** A memory garden for browsing and leaving notes, and a star-map / galaxy view where each star is a memory.
+
+| Garden | Galaxy view |
+|---|---|
+| ![Memory garden](docs/screenshots/garden.png) | ![3D galaxy star map](docs/screenshots/starmap3d.png) |
+
+*Screenshots are from a local `wrangler dev` with the repo's fictional seed personas and made-up demo memories.*
+
+**Architecture**
+
+```mermaid
+flowchart LR
+  C[MCP client<br/>Claude / Cursor / your app] -->|Streamable HTTP + Bearer key| W[Cloudflare Worker]
+  B[Browser: garden / star map] -->|REST /api/view, /api/atlas| W
+  W --> D[(D1 SQLite<br/>memories, FTS, personas, notes)]
+  W --> K[(KV<br/>media, atlas cache)]
+  W -.optional.-> AI[Workers AI or any<br/>OpenAI-compatible API]
+  Cron[Cron every 30 min] --> W
+  W -.optional webhook.-> P[Peer companions]
+  W -.optional outbox.-> N[Your Notion sync script]
+```
+
+**Quick start**
+
+```bash
+npm ci
+cp wrangler.example.toml wrangler.toml          # fill in account / D1 / KV ids
+npx wrangler d1 create companion-memory
+npx wrangler kv namespace create MEDIA
+npm run db:migrate:remote
+npx wrangler secret put ADMIN_KEY
+npm run deploy
+npm run seed -- --remote                        # creates example personas, prints their keys once
+```
+
+Local only: `npm run db:migrate:local && npm run seed && npm run dev` (no Cloudflare account needed). Tests: `npm test`, typecheck: `npx tsc --noEmit`.
+
+**MCP client config** (any client that supports remote Streamable HTTP servers):
+
+```json
+{
+  "mcpServers": {
+    "companion-memory": {
+      "url": "https://<your-worker>.workers.dev/mcp",
+      "headers": { "Authorization": "Bearer cm_<persona key>" }
+    }
+  }
+}
+```
+
+Use `/mcp/house` instead of `/mcp` for the multi-persona entry. Set `USER_NAME` and `TZ_OFFSET_MINUTES` in `[vars]` first.
+
+**Limitations (honest list)**
+
+- Tool descriptions, prompts and most docs are in Chinese; the tokenizer and thresholds are tuned for Chinese text.
+- Retrieval is lexical (BM25 + trigram FTS) with optional AI-based linking, not embeddings-first. It misses paraphrases.
+- Single-user by design: one human, several personas. No multi-tenant isolation beyond per-persona keys.
+- Tied to Cloudflare Workers / D1. Decay constants and thresholds are hand-tuned, not evaluated on any benchmark.
+- Built and used by one household; expect rough edges.
+
+**18+ note.** The `emotion`, `body`, `desire` and `dream` modules contain explicit adult content in tool descriptions and prompts. They are **off by default**. Set `EMOTION_ENABLED="1"`, `BODY_ENABLED="1"`, `DREAM_ENABLED="1"` in `[vars]` only for a private adult deployment. When off, their MCP tools are not registered, their REST routes return 404, and the cron does not advance them.
+
+Docs: [How it works](docs/HOW_IT_WORKS.md) · [Peers](docs/PEERS.md) · [Bystander side-character tutorial](docs/BYSTANDER.md) · Garden background: public-domain Grimshaw painting ([CREDITS.md](CREDITS.md)) · License: MIT.
+
+---
+
+<a id="中文"></a>
+## companion-memory · 记忆屋 + 星图
 
 > 一个给 AI 伙伴用的「会遗忘、会想起来、会留便签」的记忆系统。跑在 Cloudflare Workers 上，用 MCP 接任何客户端。
 > A memory house for AI companions — it forgets, it remembers, it leaves notes. Runs on Cloudflare Workers, speaks MCP.
 
-**中文** · [English](#english)
+[English](#english) · [中文](#中文)
 
 ---
 
@@ -22,19 +110,19 @@
 
 细节见 [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md) 、[docs/PEERS.md](docs/PEERS.md)，以及给 AI 伴侣加一个嘴毒旁观者的教程 [docs/BYSTANDER.md](docs/BYSTANDER.md)。
 
-## ⚠️ 18+ 模块（默认开启）
+## ⚠️ 18+ 模块（默认关闭）
 
 仓库里带了四个成人向模块：**情绪（emotion）、身体（body）、欲望（desire）、做梦（dream）**。它们的工具描述和提示词里有露骨内容，只适合成年人在私人部署中使用。
 
-默认是开着的。不想要就在 `wrangler.toml` 的 `[vars]` 里关掉：
+默认是关着的（没设或不是 `"1"` 都算关）。成年人私人部署想要的话，在 `wrangler.toml` 的 `[vars]` 里打开：
 
 ```toml
-EMOTION_ENABLED = "0"
-BODY_ENABLED    = "0"   # 同时关掉欲望日志相关的接口和页面
-DREAM_ENABLED   = "0"
+EMOTION_ENABLED = "1"
+BODY_ENABLED    = "1"   # 同时打开欲望日志相关的接口和页面
+DREAM_ENABLED   = "1"
 ```
 
-关掉之后对应的 MCP 工具不注册、REST 接口返回 404、cron 不再推进这些数值。也可以用 `EMOTION_PERSONAS` / `BODY_PERSONAS` 只给特定人格开。
+关着时对应的 MCP 工具不注册、REST 接口返回 404、cron 不再推进这些数值。打开后可以用 `EMOTION_PERSONAS` / `BODY_PERSONAS` 只给特定人格开。
 
 ## 快速开始（Cloudflare）
 
@@ -67,7 +155,7 @@ npm run deploy
 | `USER_NAME` | 用户在提示词里的称呼，默认「她」 |
 | `TZ_OFFSET_MINUTES` | 本地时区相对 UTC 的分钟数，北京时间填 `480` |
 | `PRIMARY_PERSONA` | 主伙伴 id，默认 `companion` |
-| `EMOTION_ENABLED` / `BODY_ENABLED` / `DREAM_ENABLED` | 18+ 模块开关，`0` 关 |
+| `EMOTION_ENABLED` / `BODY_ENABLED` / `DREAM_ENABLED` | 18+ 模块开关，默认关，`1` 开 |
 | `EMOTION_PERSONAS` / `BODY_PERSONAS` / `COGNITION_PERSONAS` | 逗号分隔的人格 id |
 | `DREAM_PERSONA` | 谁做梦 |
 | `BODY_CLASSIFIER` | `workers-ai`（默认）/ `api` / `off` |
@@ -87,36 +175,3 @@ AI 是可选的：没有 Workers AI / 外部接口时，分类和做梦会降级
 ## 许可
 
 MIT，见 [LICENSE](LICENSE)。
-
----
-
-<a id="english"></a>
-## English
-
-**What it is.** A memory server for AI companions that behaves a bit like a person: memories fade, surface on their own, and each chat window hands off to the next one with a short note.
-
-- **Decay**: each memory has a strength that halves over time (half-life depends on importance and emotional intensity). Using a memory reinforces it. Nothing is deleted.
-- **Auto-surfacing**: BM25 over Chinese-segmented text with strict thresholds (≥2 distinct terms, score ≥4.0, max 3 per turn).
-- **Continuity**: `session_start` returns "your yesterday" (handoff notes, open loops, notes from the user, heart traces, key memories); `thread_close` writes the handoff.
-- **Multiple personas** with isolated memories plus shared family facts, **doors** to wake a persona from one MCP endpoint, **peer messaging** between personas, a **garden** web UI and a **star atlas** where brightness = memory strength.
-
-### ⚠️ 18+ modules (on by default)
-
-`emotion`, `body`, `desire`, `dream` contain explicit adult content and are meant for private adult use. Disable with `EMOTION_ENABLED=0`, `BODY_ENABLED=0`, `DREAM_ENABLED=0` in `[vars]`.
-
-### Quick start
-
-```bash
-npm install
-cp wrangler.example.toml wrangler.toml   # fill in your D1 id
-npx wrangler d1 create companion-memory
-npm run db:migrate:remote
-npx wrangler secret put ADMIN_KEY
-npm run deploy
-```
-
-Connect any MCP client to `https://<worker>/mcp` with `Authorization: Bearer cm_…`, or `/mcp/house` for the multi-persona entry. See the config table above; set `TZ_OFFSET_MINUTES` and `USER_NAME` first. An AI provider is optional.
-
-Optional **Notion outbox** (`0007_notion_sync.sql`, `src/notion-sync.ts`): queues memory changes for your own sync script; off/inert unless you wire one up. Garden background is a public-domain Grimshaw painting — see [CREDITS.md](CREDITS.md).
-
-Docs: [How it works](docs/HOW_IT_WORKS.md) · [Peers](docs/PEERS.md) · [Bystander](docs/BYSTANDER.md). License: MIT.
