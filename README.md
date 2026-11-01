@@ -95,7 +95,7 @@ When `EMOTION_ENABLED="1"`, `/emotion` (atlas key) draws the companion's current
 
 **18+ note.** The `emotion`, `body`, `desire` and `dream` modules contain explicit adult content in tool descriptions and prompts. They are **off by default**. Set `EMOTION_ENABLED="1"`, `BODY_ENABLED="1"`, `DREAM_ENABLED="1"` in `[vars]` only for a private adult deployment. When off, their MCP tools are not registered, their REST routes return 404, and the cron does not advance them.
 
-Docs: [How it works](docs/HOW_IT_WORKS.md) · [Peers](docs/PEERS.md) · [Bystander side-character tutorial](docs/BYSTANDER.md) · Garden background: public-domain Grimshaw painting ([CREDITS.md](CREDITS.md)) · License: MIT.
+Docs: [How it works](docs/HOW_IT_WORKS.md) · [Peers](docs/PEERS.md) · [Bystander side-character tutorial](docs/BYSTANDER.md) · Inspired by [Ombre Brain](https://github.com/P0luz/Ombre-Brain) · Garden background: public-domain Grimshaw painting ([CREDITS.md](CREDITS.md)) · License: MIT.
 
 ---
 
@@ -187,7 +187,7 @@ npm run deploy
 
 **Notion 同步（可选，默认关）**：`migrations/0007_notion_sync.sql` 和 `src/notion-sync.ts` 提供一个 outbox，可以把记忆变更排队给你自己的同步脚本去推 Notion。仓库里不带同步脚本，没配置就什么都不会发出去，不用管它。
 
-花园背景图是公有领域的 Grimshaw 油画，来源见 [CREDITS.md](CREDITS.md)。
+思路受 [Ombre Brain](https://github.com/P0luz/Ombre-Brain) 启发（没有搬代码）。花园背景图是公有领域的 Grimshaw 油画，来源见 [CREDITS.md](CREDITS.md)。
 
 AI 是可选的：没有 Workers AI / 外部接口时，分类和做梦会降级或跳过，记忆核心不受影响。
 
