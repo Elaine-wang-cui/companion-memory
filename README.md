@@ -20,7 +20,7 @@
 - **花园 + 星图**：网页上浏览、写便条；星图里每颗星是一条记忆，亮度就是它的强度。
 - **抽卡匣（deck）**、**save_conversation** 存整段聊天。
 
-细节见 [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md) 和 [docs/PEERS.md](docs/PEERS.md)。
+细节见 [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md) 、[docs/PEERS.md](docs/PEERS.md)，以及给 AI 伴侣加一个嘴毒旁观者的教程 [docs/BYSTANDER.md](docs/BYSTANDER.md)。
 
 ## ⚠️ 18+ 模块（默认开启）
 
@@ -119,4 +119,4 @@ Connect any MCP client to `https://<worker>/mcp` with `Authorization: Bearer cm_
 
 Optional **Notion outbox** (`0007_notion_sync.sql`, `src/notion-sync.ts`): queues memory changes for your own sync script; off/inert unless you wire one up. Garden background is a public-domain Grimshaw painting — see [CREDITS.md](CREDITS.md).
 
-Docs: [How it works](docs/HOW_IT_WORKS.md) · [Peers](docs/PEERS.md). License: MIT.
+Docs: [How it works](docs/HOW_IT_WORKS.md) · [Peers](docs/PEERS.md) · [Bystander](docs/BYSTANDER.md). License: MIT.
