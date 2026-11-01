@@ -664,7 +664,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       }
 
       if (!CFG.adult && path.startsWith("/api/view/desires")) {
-        return json({ error: "disabled", message: "desire module is off (BODY_ENABLED=0)" }, 404);
+        return json({ error: "disabled", message: "desire module is off (set BODY_ENABLED=1 to enable)" }, 404);
       }
       if (method === "POST" && path === "/api/view/desires") {
         const parsed = saveDesireSchema.safeParse(await readJson(request));
@@ -1146,7 +1146,7 @@ async function rest(
   }
 
   if (!CFG.adult && /^\/desires?(\/|$)/.test(p)) {
-    return json({ error: "disabled", message: "desire module is off (BODY_ENABLED=0)" }, 404);
+    return json({ error: "disabled", message: "desire module is off (set BODY_ENABLED=1 to enable)" }, 404);
   }
   if (method === "POST" && (p === "/desires" || p === "/desire")) {
     const parsed = saveDesireSchema.safeParse(await readJson(request));

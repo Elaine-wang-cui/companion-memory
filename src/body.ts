@@ -1,7 +1,7 @@
 import { CFG } from "./config";
 import { renderTemplate } from "./doors";
 /**
- * Body state system (18+, OFF by default). Per persona; enabled only when ENABLE_ADULT_MODULES=1
+ * Body state system (18+, OFF by default). Per persona; enabled only when BODY_ENABLED=1
  * and the persona id is listed in BODY_PERSONAS.
  *
  * Design rules:

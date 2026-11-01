@@ -36,10 +36,10 @@ USER_NAME = "小满"
 TZ_OFFSET_MINUTES = "480"
 PRIMARY_PERSONA = "companion"
 
-# ---- 18+ modules: ON by default. Set to "0" to turn off. ----
-EMOTION_ENABLED = "1"
-BODY_ENABLED = "1"
-DREAM_ENABLED = "1"
+# ---- 18+ modules: OFF by default. Set to "1" to opt in (adults, private deployments only). ----
+EMOTION_ENABLED = "0"
+BODY_ENABLED = "0"
+DREAM_ENABLED = "0"
 # Which personas get each module (comma separated; default = PRIMARY_PERSONA)
 # EMOTION_PERSONAS = "companion"
 # BODY_PERSONAS = "companion"
