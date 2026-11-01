@@ -99,3 +99,20 @@ describe("recall bias", () => {
     expect(n.sub.security).toBeCloseTo(0.6);
   });
 });
+
+describe("recall backflow bounds", () => {
+  it("substrate nudges from recall are capped per hour, like surface nudges", () => {
+    const n = NET.defaultNet();
+    const t = Date.UTC(2026, 0, 1, 12);
+    let total = 0;
+    for (let i = 0; i < 50; i++) total += NET.takeSubNudge(n, "security", -0.01, t);
+    expect(total).toBeCloseTo(-NET.BOUNDS.subHourCap, 6);
+    expect(NET.takeSubNudge(n, "security", -0.01, t + 3_600_000)).toBeCloseTo(-0.01, 6);
+  });
+  it("recallNudge scales substrate with the same total-5 factor as surface", () => {
+    const nd = NET.recallNudge(Array.from({ length: 10 }, () => ["怕"]));
+    const dimTot = Object.values(nd.dims).reduce((a, b) => a + Math.abs(b), 0);
+    expect(dimTot).toBeCloseTo(5, 6);
+    expect(nd.sub.security).toBeCloseTo(-0.01 * 10 * (5 / 20), 6);
+  });
+});

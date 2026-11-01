@@ -382,7 +382,7 @@ async function applyPending(db: MemoryDb, pid: string, st: EmoState, net: Net, n
     const before = vals(st);
     const applied: Record<string, number> = {};
     for (const [k, x] of Object.entries(nd.dims)) if (isDim(k)) { const y = NET.takeNudge(net, k, x, nowMs); st[k].surface = clamp(st[k].surface + y); st[k].inner = clamp(st[k].inner + y / 4); if (y) applied[k] = r1(y); }
-    for (const [k, x] of Object.entries(nd.sub)) net.sub[k as NET.SubVar] = Math.max(0, Math.min(1, net.sub[k as NET.SubVar] + (x ?? 0)));
+    for (const [k, x] of Object.entries(nd.sub)) { const y = NET.takeSubNudge(net, k as NET.SubVar, x ?? 0, nowMs); net.sub[k as NET.SubVar] = Math.max(0, Math.min(1, net.sub[k as NET.SubVar] + y)); }
     if (Object.keys(applied).length) await db.prepare(`INSERT INTO emotion_events (id, persona_id, source, changes_json, reason, before_json, after_json, created_at) VALUES (?,?,?,?,?,?,?,?)`)
       .bind(crypto.randomUUID(), pid, "recall", JSON.stringify({ applied, ids: data.ids ?? [], moods: data.moods ?? [] }), "想起了旧事", JSON.stringify(before), JSON.stringify(vals(st)), new Date(nowMs).toISOString()).run();
   }

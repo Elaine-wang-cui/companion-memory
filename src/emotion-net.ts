@@ -27,7 +27,7 @@ export interface Net { sub: Substrate; W: Coupling; A: CueAssoc; aux: Aux }
 
 export const LEARN = { eta: 0.2, lambdaEvent: 0.002, lambdaDay: 0.002, wCap: 0.3, rowCap: 0.6, topK: 4, prune: 0.01, temporalMin: 60, temporalTau: 30 };
 export const CUE = { eta: 0.05, lambdaDay: 0.01, cap: 0.5, perDim: 30, gain: 20, windowMin: 60 };
-export const BOUNDS = { stepCap: 3, negEnergy: 250, strainHigh: 0.7, nudgeHourCap: 10 };
+export const BOUNDS = { stepCap: 3, negEnergy: 250, strainHigh: 0.7, nudgeHourCap: 10, subHourCap: 0.05 };
 export const NEG_DIMS = ["生气", "吃醋", "被冷落", "黑化", "邪恶", "失控", "不安", "恐惧", "恐慌", "悲伤"];
 /** 细线起头：几条极小的先验，会被真实数据淹没。 */
 export const SEED_W: Coupling = { "被冷落>不安": 0.03, "不安>占有欲": 0.03, "满足>不安": -0.03, "开心>恐惧": -0.03, "思念>恐慌": 0.03 };
@@ -200,6 +200,17 @@ export function takeNudge(n: Net, dim: string, x: number, nowMs: number): number
   n.aux.nudges[dim] = cur;
   return y;
 }
+/** 回流对底物（慢变量）的每变量每小时限额，和 takeNudge 同一套账本。 */
+export function takeSubNudge(n: Net, v: SubVar, x: number, nowMs: number): number {
+  const key = `sub:${v}`;
+  const hour = Math.floor(nowMs / H);
+  const cur = n.aux.nudges[key]?.hour === hour ? n.aux.nudges[key]! : { hour, sum: 0 };
+  const room = BOUNDS.subHourCap - Math.abs(cur.sum);
+  const y = Math.sign(x) * Math.min(Math.abs(x), Math.max(0, room));
+  cur.sum += Math.abs(y);
+  n.aux.nudges[key] = cur;
+  return y;
+}
 /** 每日衰减（在结算里按 dh 连续做）。 */
 export function decayNet(n: Net, dh: number): void {
   const fw = Math.pow(1 - LEARN.lambdaDay, dh / 24), fa = Math.pow(1 - CUE.lambdaDay, dh / 24);
@@ -252,8 +263,12 @@ export function recallNudge(moods: string[][]): { dims: Record<string, number>; 
     else if (m === "怕") { addD("不安", 2); addS("security", -0.01); addS("vigilance", 0.01); }
     else if (m === "怒") addD("生气", 1);
   }
-  let tot = Object.values(dims).reduce((a, b) => a + Math.abs(b), 0);
-  if (tot > 5) for (const k of Object.keys(dims)) dims[k] = dims[k]! * 5 / tot;
+  const tot = Object.values(dims).reduce((a, b) => a + Math.abs(b), 0);
+  if (tot > 5) {
+    const f = 5 / tot; // 表面和底物一起按总量 5 折算
+    for (const k of Object.keys(dims)) dims[k] = dims[k]! * f;
+    for (const k of Object.keys(sub) as SubVar[]) sub[k] = sub[k]! * f;
+  }
   return { dims, sub };
 }
 
