@@ -90,7 +90,7 @@ export const addDeckItemSchema = z
   .object({
     title: z.string().trim().min(1, "title 不能为空").max(500, "title 太长"),
     content: z.string().trim().min(1, "content 不能为空"),
-    topic_id: z.string().optional().describe("主题 id（含小说子类如 强制爱）；不填则按 kind 推断。子类自动 kind=novel"),
+    topic_id: z.string().optional().describe("主题 id（含小说子类如 悬疑）；不填则按 kind 推断。子类自动 kind=novel"),
     kind: deckKindSchema.optional().describe("条目类型；不填则用 topic_id"),
     tags: z.array(z.string()).max(24).optional(),
     source_url: z.string().optional().describe("Notion 等来源 URL"),
@@ -114,8 +114,8 @@ export const createTopicSchema = z.object({
     .min(1)
     .max(48)
     .optional()
-    .describe("主题 id；不填则从 name 生成。如 qiangzhiai / 3p / 强制爱"),
-  name: z.string().trim().min(1, "name 不能为空").max(80, "name 太长").describe("显示名，如「强制爱」「3P」"),
+    .describe("主题 id；不填则从 name 生成。如 xuanyi / short / 悬疑"),
+  name: z.string().trim().min(1, "name 不能为空").max(80, "name 太长").describe("显示名，如「悬疑」「短篇」"),
   description: z.string().trim().max(500).optional().describe("可选说明"),
   parent_id: z
     .string()

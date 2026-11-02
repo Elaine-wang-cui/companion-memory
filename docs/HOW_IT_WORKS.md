@@ -10,7 +10,7 @@ on new_window:
     system_prompt += card.text
 
 on each user_turn(msg, prev_user_msg):
-    hits = POST /api/<persona>/auto-recall { query: msg + prev_user_msg, exclude_ids: seen }
+    hits = POST /api/<persona>/auto-recall { message: msg, prev_message: prev_user_msg, exclude_ids: seen }
     seen += hits.ids
     if hits.text: inject hits.text as a quiet system note (不要念给用户)
     reply = model(...)

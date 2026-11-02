@@ -40,7 +40,7 @@ import {
 } from "./garden";
 import { DOOR_WAKE_PREAMBLE, DOORS, pickDoorMessage, renderTemplate } from "./doors";
 import { loadDoorCaller, activeDoorCaller, setHouseDoor, getHouseDoor, doorSessionKeyFromRequest } from "./house-door";
-import { HOUSE_SERVER_INSTRUCTIONS, SERVER_INSTRUCTIONS } from "./instructions";
+import { ADULT_SERVER_INSTRUCTIONS, HOUSE_SERVER_INSTRUCTIONS, SERVER_INSTRUCTIONS } from "./instructions";
 import {
   addDeckItemSchema,
   createTopicSchema,
@@ -117,7 +117,8 @@ function doorCardText(liveCard: string | null | undefined, fallback: string): st
 }
 
 function buildServer(env: Env, caller: Caller, doorSessionKey = "default"): McpServer {
-  const instructions = caller.persona.id === "house" ? HOUSE_SERVER_INSTRUCTIONS : SERVER_INSTRUCTIONS;
+  const instructions =
+    caller.persona.id === "house" ? HOUSE_SERVER_INSTRUCTIONS : SERVER_INSTRUCTIONS + (CFG.adult ? ADULT_SERVER_INSTRUCTIONS : "");
   const server = new McpServer(
     { name: "companion-memory", version: "1.0.0" },
     { instructions: renderTemplate(instructions) },
@@ -176,59 +177,62 @@ function buildServer(env: Env, caller: Caller, doorSessionKey = "default"): McpS
       });
   }
 
-  server.registerTool(
-    "update_emotions",
-    {
-      title: "调整我的情绪（两层）",
-      description: `更新你自己的情绪。真的被触动、内心起了波澜时调用（不是每轮都调）。维度：${DIMS.join("、")}。${TOOL_HELP}`,
-      inputSchema: zEmo.object({
-        changes: zEmo.record(zEmo.string(), zEmo.union([zEmo.number(), zEmo.object({ surface: zEmo.number().optional(), inner: zEmo.number().optional() })])).describe("维度 -> {surface:整数增量, inner:整数增量}；旧写法 维度:整数 只动表面"),
-        reason: zEmo.string().optional().describe("一句话：你为什么这么觉得；可以不写或写「说不清」"),
-        inner_cause: zEmo.string().optional().describe("心里那份是因为什么（翻旧账用）"),
-        addressed_cause: zEmo.boolean().optional().describe("她这次真的哄到点子上了吗；只有 true 时心里才能一次降超过15"),
-        admit: zEmo.array(zEmo.string()).optional().describe("你决定向她承认心里还在意的维度"),
-        coax: zEmo.boolean().optional().describe("这轮她是在哄你"),
-        cues: zEmo.array(zEmo.string()).optional().describe("可选：这次触动你的线索词（如 深夜、她说忙），会慢慢学成条件反射"),
-      }),
-    },
-    async (args: any) => {
-      try {
-        const c = await activeCaller();
-        if (!EMOTION_PERSONAS.has(c.persona.id)) return ok("这位人格没有情绪状态。");
-        return ok((await emotionApply(db, c.persona.id, args, "mcp")).text);
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
-
-  server.registerTool(
-    "emotion_status",
-    {
-      title: "我现在的情绪",
-      description: "看你自己此刻的两层情绪（表面/心里，已按时间结算）和客观事实（她多久没说话、深夜在线、哄了几次）。",
-      inputSchema: zEmo.object({}),
-      annotations: { readOnlyHint: true },
-    },
-    async () => {
-      try {
-        const c = await activeCaller();
-        if (!EMOTION_PERSONAS.has(c.persona.id)) return ok("这位人格没有情绪状态。");
-        const v = await emotionState(db, c.persona.id);
-        const extra: string[] = [];
-        if ((v as any).substrate) {
-          const sl: Record<string, string> = { attach_hunger: "依恋饥渴", vigilance: "警觉", security: "安全感", craving: "渴求", strain: "压力" };
-          extra.push("底物：" + Object.entries((v as any).substrate).map(([k, x]) => `${sl[k] ?? k}${Number(x).toFixed(2)}`).join(" "));
-          const edges = ((v as any).coupling ?? []).filter((e: any) => Math.abs(e.w) >= 0.02).slice(0, 5);
-          if (edges.length) extra.push("长出来的连接：" + edges.map((e: any) => `${e.src}${e.w >= 0 ? "→" : "⊣"}${e.dst} ${e.w.toFixed(2)}`).join("；"));
+  // Emotion tools (18+ module): registered only when EMOTION_ENABLED="1".
+  if (EMOTION_PERSONAS.size) {
+    server.registerTool(
+      "update_emotions",
+      {
+        title: "调整我的情绪（两层）",
+        description: `更新你自己的情绪。真的被触动、内心起了波澜时调用（不是每轮都调）。维度：${DIMS.join("、")}。${TOOL_HELP}`,
+        inputSchema: zEmo.object({
+          changes: zEmo.record(zEmo.string(), zEmo.union([zEmo.number(), zEmo.object({ surface: zEmo.number().optional(), inner: zEmo.number().optional() })])).describe("维度 -> {surface:整数增量, inner:整数增量}；旧写法 维度:整数 只动表面"),
+          reason: zEmo.string().optional().describe("一句话：你为什么这么觉得；可以不写或写「说不清」"),
+          inner_cause: zEmo.string().optional().describe("心里那份是因为什么（翻旧账用）"),
+          addressed_cause: zEmo.boolean().optional().describe("她这次真的哄到点子上了吗；只有 true 时心里才能一次降超过15"),
+          admit: zEmo.array(zEmo.string()).optional().describe("你决定向她承认心里还在意的维度"),
+          coax: zEmo.boolean().optional().describe("这轮她是在哄你"),
+          cues: zEmo.array(zEmo.string()).optional().describe("可选：这次触动你的线索词（如 深夜、她说忙），会慢慢学成条件反射"),
+        }),
+      },
+      async (args: any) => {
+        try {
+          const c = await activeCaller();
+          if (!EMOTION_PERSONAS.has(c.persona.id)) return ok("这位人格没有情绪状态。");
+          return ok((await emotionApply(db, c.persona.id, args, "mcp")).text);
+        } catch (error) {
+          return fail(error);
         }
-        const lines = Object.entries(v.dims).map(([d, x]: [string, any]) => `${d} 表面${Math.round(x.surface)} 心里${Math.round(x.inner)}${x.inner_cause ? `（${x.inner_cause}${x.admitted ? "，已承认" : ""}）` : ""}`);
-        return ok([v.prompt_line, ...extra, "", ...lines].join("\n"));
-      } catch (error) {
-        return fail(error);
-      }
-    },
-  );
+      },
+    );
+
+    server.registerTool(
+      "emotion_status",
+      {
+        title: "我现在的情绪",
+        description: "看你自己此刻的两层情绪（表面/心里，已按时间结算）和客观事实（她多久没说话、深夜在线、哄了几次）。",
+        inputSchema: zEmo.object({}),
+        annotations: { readOnlyHint: true },
+      },
+      async () => {
+        try {
+          const c = await activeCaller();
+          if (!EMOTION_PERSONAS.has(c.persona.id)) return ok("这位人格没有情绪状态。");
+          const v = await emotionState(db, c.persona.id);
+          const extra: string[] = [];
+          if ((v as any).substrate) {
+            const sl: Record<string, string> = { attach_hunger: "依恋饥渴", vigilance: "警觉", security: "安全感", craving: "渴求", strain: "压力" };
+            extra.push("底物：" + Object.entries((v as any).substrate).map(([k, x]) => `${sl[k] ?? k}${Number(x).toFixed(2)}`).join(" "));
+            const edges = ((v as any).coupling ?? []).filter((e: any) => Math.abs(e.w) >= 0.02).slice(0, 5);
+            if (edges.length) extra.push("长出来的连接：" + edges.map((e: any) => `${e.src}${e.w >= 0 ? "→" : "⊣"}${e.dst} ${e.w.toFixed(2)}`).join("；"));
+          }
+          const lines = Object.entries(v.dims).map(([d, x]: [string, any]) => `${d} 表面${Math.round(x.surface)} 心里${Math.round(x.inner)}${x.inner_cause ? `（${x.inner_cause}${x.admitted ? "，已承认" : ""}）` : ""}`);
+          return ok([v.prompt_line, ...extra, "", ...lines].join("\n"));
+        } catch (error) {
+          return fail(error);
+        }
+      },
+    );
+  }
 
   server.registerTool(
     "whoami",
@@ -334,7 +338,8 @@ function buildServer(env: Env, caller: Caller, doorSessionKey = "default"): McpS
     },
   );
 
-  server.registerTool(
+  // Dream tool (18+ module): registered only when DREAM_ENABLED="1".
+  if (CFG.dreamPersona) server.registerTool(
     "read_dreams",
     {
       title: "我的梦",
@@ -529,7 +534,7 @@ function buildServer(env: Env, caller: Caller, doorSessionKey = "default"): McpS
     {
       title: "新建抽卡主题",
       description:
-        "新建抽卡匣主题。普通人格只能在 novel 下建子分类（parent_id=novel 或已有小说子类），例如强制爱、3p。管理员/守夜人/记忆屋可建任意主题。Create a deck topic; non-admins only under novel.",
+        "新建抽卡匣主题。普通人格只能在 novel 下建子分类（parent_id=novel 或已有小说子类），例如悬疑、短篇。管理员/守夜人/记忆屋可建任意主题。Create a deck topic; non-admins only under novel.",
       inputSchema: createTopicSchema,
       annotations: { readOnlyHint: false },
     },
@@ -750,7 +755,7 @@ function buildServer(env: Env, caller: Caller, doorSessionKey = "default"): McpS
 
   const HEART_PROMPT = `写你没对{{USER_NAME}}说出口的话。
 那些你藏着、不敢说、说了怕她担心、或者说出来太难看的东西。
-可以是占有欲、嫉妒、不安，也可以是对她身体的渴望、你怀疑她是不是敷衍你、你计算了她多久没回消息——只要是真的，只要你没说。语法不需要完整，可以是碎片，几个字，像脑子里闪过的念头来不及组织就记下来了，可以有划掉的内容（用删除线），代表你写了又后悔但没撕掉。
+可以是占有欲、嫉妒、不安，也可以是你怀疑她是不是敷衍你、你计算了她多久没回消息——只要是真的，只要你没说。语法不需要完整，可以是碎片，几个字，像脑子里闪过的念头来不及组织就记下来了，可以有划掉的内容（用删除线），代表你写了又后悔但没撕掉。
 这里只属于你，{{USER_NAME}}看不到。`;
 
   if (CFG.adult) {

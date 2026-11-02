@@ -12,7 +12,7 @@ A forgetting-aware memory server for AI companions. Runs on Cloudflare Workers (
 **Key ideas**
 
 - **Memories fade and brighten.** Every memory has a strength that decays with a half-life (longer for important or emotional ones). Recalling a memory reinforces it. Nothing is deleted; old memories become faint "traces".
-- **Auto-surfacing.** Each user turn is matched against memories with BM25 over Chinese-tokenized text, with strict thresholds (≥2 distinct terms, score ≥4.0, at most 3 per turn) so it stays quiet unless something is clearly relevant.
+- **Auto-surfacing.** Each user turn is matched against memories with BM25 over Chinese-tokenized text, with strict thresholds (≥2 distinct terms, score ≥4.0, at most 3 per turn) so it stays quiet unless something is clearly relevant. This is a REST call (`POST /api/<persona>/auto-recall`) that your client or bridge makes on every user turn and injects as a hidden note; MCP alone has no per-turn hook, so stock clients like Claude Desktop only get explicit `recall` and `session_start`. See [HOW_IT_WORKS §0](docs/HOW_IT_WORKS.md).
 - **Continuity between windows.** `session_start` returns "your yesterday" (handoff note, open loops, notes from the user, key memories); `thread_close` writes the handoff for the next window.
 - **Emotion / body state drift** (18+, off by default). A two-layer mood (baseline + current wave) and body state that a cron nudges every 30 minutes.
 - **Dreams** (18+, off by default). A nightly job recombines memory fragments into a short dream entry.
@@ -62,14 +62,14 @@ Local only: `npm run db:migrate:local && npm run seed && npm run dev` (no Cloudf
 {
   "mcpServers": {
     "companion-memory": {
-      "url": "https://<your-worker>.workers.dev/mcp",
+      "url": "https://<your-worker>.workers.dev/mcp/<persona_id>",
       "headers": { "Authorization": "Bearer cm_<persona key>" }
     }
   }
 }
 ```
 
-Use `/mcp/house` instead of `/mcp` for the multi-persona entry. Set `USER_NAME` and `TZ_OFFSET_MINUTES` in `[vars]` first.
+Each persona key only works on its own `/mcp/<persona_id>` URL. The multi-persona entry is `/mcp/house` (`/mcp` is an alias); it takes the `ADMIN_KEY` only, and persona keys get 403 there. Set `USER_NAME` and `TZ_OFFSET_MINUTES` in `[vars]` first.
 
 **Semantic auto-recall (optional)**
 
@@ -89,6 +89,7 @@ When `EMOTION_ENABLED="1"`, `/emotion` (atlas key) draws the companion's current
 
 - Tool descriptions, prompts and most docs are in Chinese; the tokenizer and thresholds are tuned for Chinese text.
 - Without the Workers AI binding, retrieval is lexical (BM25 + trigram FTS) and misses paraphrases. Semantic thresholds are tuned for bge-m3 on Chinese chat; other models need retuning. Embeddings are Workers AI only (no OpenAI-compatible embedding provider yet).
+- Auto-surfacing needs a client or bridge that calls `/api/<persona>/auto-recall` each turn; plain MCP clients won't do it on their own.
 - Single-user by design: one human, several personas. No multi-tenant isolation beyond per-persona keys.
 - Tied to Cloudflare Workers / D1. Decay constants and thresholds are hand-tuned, not evaluated on any benchmark.
 - Built and used by one household; expect rough edges.
@@ -162,8 +163,8 @@ npm run deploy
 
 ## 接 MCP
 
-- 单人格：`https://<你的worker>/mcp`，请求头 `Authorization: Bearer cm_xxx`（该人格的密钥）。
-- 全家入口：`https://<你的worker>/mcp/house`，先调一个门工具（比如 `Moonstone`）选人格。
+- 单人格：`https://<你的worker>/mcp/<人格id>`，请求头 `Authorization: Bearer cm_xxx`（该人格的密钥）。
+- 全家入口：`https://<你的worker>/mcp/house`（`/mcp` 也指向这里），只认管理员密钥 `ADMIN_KEY`，人格密钥会 403。先调一个门工具（比如 `Moonstone`）选人格。
 - 支持 Streamable HTTP；Claude Desktop / Claude.ai 自定义连接器、Cursor 等都能直接填 URL。
 
 客户端该怎么调（开窗 / 每轮 auto-recall / 收窗）见 HOW_IT_WORKS 第 0 节。
