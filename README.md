@@ -163,7 +163,7 @@ npm run deploy
 
 ## 接 MCP
 
-- 单人格：`https://<你的worker>/mcp`，请求头 `Authorization: Bearer cm_xxx`（该人格的密钥）。
+- 单人格：`https://<你的worker>/mcp/<人格id>`，请求头 `Authorization: Bearer cm_xxx`（该人格的密钥）。
 - 全家入口：`https://<你的worker>/mcp/house`（`/mcp` 也指向这里），只认管理员密钥 `ADMIN_KEY`，人格密钥会 403。先调一个门工具（比如 `Moonstone`）选人格。
 - 支持 Streamable HTTP；Claude Desktop / Claude.ai 自定义连接器、Cursor 等都能直接填 URL。
 
