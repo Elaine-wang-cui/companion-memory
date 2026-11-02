@@ -11,7 +11,8 @@ import type { Env, MemoryDb, MemoryRow } from "./types";
 // —— 可调开关 ——
 export const LINKS_ENABLED = true;            // 总开关：自动连线
 export const ASSOC_RECALL_ENABLED = true;     // 浮现时带出关联记忆（心流）
-export const ASSOC_MAX = 2;                   // 每次最多牵出几条
+export const ASSOC_MAX = 1;                   // 每次最多牵出几条（混合浮现后 2→1，少一点跑题）
+export const ASSOC_MIN_SIM = 0.8;             // 牵出来的那条与源记忆的余弦相似度门槛（有向量时）
 export const ASSOC_MIN_SCORE = 0.3;           // weight × 当前强度 的门槛
 export const ASSOC_CLIP = 120;                // 牵出来的那条最多显示多少字
 export const ASSOC_NEIGHBOR_BOOST = 0.05;     // 用到一条记忆时，邻居被轻轻强化（直接强化是 0.5）
@@ -81,13 +82,13 @@ function parseTags(t: string | null | undefined): string[] {
   try { const v = JSON.parse(t || "[]"); if (Array.isArray(v)) return v.map((x) => String(x).trim()).filter(Boolean); } catch { /* */ }
   return String(t || "").split(/[,，\s]+/).filter(Boolean);
 }
-function cos(a: number[], b: number[]) {
+export function cos(a: number[], b: number[]) {
   let d = 0, x = 0, y = 0;
   for (let i = 0; i < a.length; i++) { d += a[i]! * b[i]!; x += a[i]! * a[i]!; y += b[i]! * b[i]!; }
   return x && y ? d / Math.sqrt(x * y) : 0;
 }
 
-async function embed(ai: NonNullable<Env["AI"]>, texts: string[]): Promise<number[][]> {
+export async function embed(ai: NonNullable<Env["AI"]>, texts: string[]): Promise<number[][]> {
   const out = (await ai.run(EMBED_MODEL, { text: texts.map((t) => t.slice(0, 2000)) })) as { data?: number[][] };
   if (!out?.data || out.data.length !== texts.length) throw new Error("embedding failed");
   return out.data;
@@ -95,7 +96,7 @@ async function embed(ai: NonNullable<Env["AI"]>, texts: string[]): Promise<numbe
 
 type LRow = { id: string; owner_persona: string; tags: string; content: string };
 
-async function loadVecs(db: MemoryDb): Promise<Map<string, number[]>> {
+export async function loadVecs(db: MemoryDb): Promise<Map<string, number[]>> {
   const r = await db.prepare(`SELECT memory_id, vec FROM memory_embeddings WHERE model = ?`).bind(EMBED_MODEL).all<{ memory_id: string; vec: string }>();
   return new Map((r.results ?? []).map((x) => [x.memory_id, JSON.parse(x.vec) as number[]]));
 }

@@ -1,5 +1,5 @@
 import { CFG } from "./config";
-import { associate, coRecall, nudgeNeighbors, ASSOC_CLIP, ASSOC_MAX } from "./links";
+import { associate, coRecall, nudgeNeighbors, ASSOC_CLIP, ASSOC_MAX, ASSOC_MIN_SIM, cos, embed, loadVecs, reqStore } from "./links";
 import { COGNITION_ENABLED, COGNITION_FIRST, cognitionMaps, maybeCognitionNote } from "./cognition";
 import { TYPE_LABEL } from "./garden-links";
 import { schemaCurrent } from "./schema-gate";
@@ -14,6 +14,10 @@ import { PRIMARY_CORE_PROMPT, renderTemplate } from "./doors";
 import { listHeartTraces } from "./deck";
 import { recentAutonomous, syncDesireMemories } from "./body";
 import { DECAY_COLUMNS, reinforceMemory, stateOf, surfaceWeight } from "./forgetting";
+import { readTone, queueRecallNudge } from "./emotion";
+import { recallBias, toneCos, memToneVec, parseMoods } from "./emotion-net";
+/** 行上若带 mood 列（JSON 数组文本），取出来。 */
+function moodOf(r: unknown): string[] | undefined { const m = (r as { mood?: unknown } | undefined)?.mood; const v = parseMoods(m); return v.length ? v : undefined; }
 
 const MEMORY_COLUMNS = `id, owner_persona, created_by, kind, visibility, content, importance, tags, event_date, created_at, updated_at, source_platform, ${DECAY_COLUMNS}`;
 
@@ -401,7 +405,10 @@ export async function sessionStart(db: MemoryDb, caller: Caller, _opts: { drafts
 }
 
 // —— 自动浮现 ——
-// 2026-10-26 v2：纯关键词（中文二字切片），不是向量；查询只用用户本句(+上一句用户话)。
+// 两种模式：
+//  - hybrid（有 Workers AI 绑定 env.AI 且 RECALL_SEMANTIC != "0"）：bge-m3 向量相似度为主（按意思找），BM25 关键词为辅；
+//  - bm25（零配置默认 / 向量失败时回退）：纯关键词（中文分词），查询只用用户本句(+上一句用户话)。
+// 自动浮现不再随机冒出几乎忘掉的记忆（trace 只在显式 recall 里出现）。
 // 门槛：至少命中 RECALL_MIN_HITS 个不同的有效关键词；排序 相关度 > 重要度 > 新近；每轮最多 3 条；
 // exclude_ids 由客户端按会话去重传入；每条带 [#id · 人格] 前缀；debug 字段回报每轮检索过程。
 
@@ -409,7 +416,10 @@ export async function sessionStart(db: MemoryDb, caller: Caller, _opts: { drafts
 const STOP = new Set(
   "我们 你们 他们 她们 它们 咱们 什么 怎么 怎样 一个 这个 那个 这些 那些 就是 还是 没有 可以 知道 觉得 现在 然后 因为 所以 但是 不是 而且 如果 自己 已经 一下 一点 有点 真的 好像 的话 时候 这样 那样 这么 那么 不会 不要 一起 还有 只是 其实 应该 可能 东西 事情 今天 今晚 昨天 明天 早上 中午 晚上 记得 哈哈 嘿嘿 嗯嗯 第一次 一次 两个 一些 没事 为什么 这里 那里 哪里 一直 一样 而已 上了 好了 是的 对啊 对呀 我的 你的 他的 她的 有没有 是不是 要不要 喜欢 觉得 感觉 想要 需要".split(" "),
 );
-export const RECALL_MIN_SIMILARITY = 0.75; // 预留：若将来换向量检索，余弦相似度低于此值不注入（当前未使用向量）
+export const RECALL_MIN_SIMILARITY = 0.62; // 混合浮现：bge-m3 余弦 ≥ 此值即可浮现（作者实测：无关句 top ≈0.50–0.55，相关 ≈0.60–0.67；换模型请重调）
+export const RECALL_SOFT_SIMILARITY = 0.56; // 关键词也过了门槛时，余弦 ≥ 此值也可浮现
+export const RECALL_DUP_SIMILARITY = 0.9; // 两条之间余弦 > 此值视为同一件事，只留一条
+export const RECALL_TAG_BOOST = 0.03; // topic / people 与本句推断一致时，每项加一点
 export const RECALL_MIN_HITS = 2; // 至少命中 2 个不同的有效词
 export const RECALL_MIN_BM25 = 4.0; // BM25 门槛（按测试分布选定，见 test/auto-recall.test.ts 日志）
 export const BM25_K1 = 1.2;
@@ -513,6 +523,48 @@ export function rankRecall(rows: MemoryRow[], toks: string[], now = Date.now()):
   return scoreRecall(rows, toks, now).filter((c) => c.hits.length >= RECALL_MIN_HITS && c.relevance >= RECALL_MIN_BM25);
 }
 
+// —— 混合浮现的辅助 ——
+let vecCache: { key: string; vecs: Map<string, number[]> } | null = null;
+async function hybridSims(db: MemoryDb, query: string, rows: MemoryRow[]): Promise<{ sims: Map<string, number>; vecs: Map<string, number[]> } | null> {
+  const env = reqStore.getStore()?.env;
+  const ai = env?.AI;
+  if (!ai || !query.trim() || !CFG.semanticRecall) return null;
+  try {
+    const fp = await db.prepare(`SELECT COUNT(*) || '/' || IFNULL(MAX(updated_at), '') AS k FROM memory_embeddings`).first<{ k: string }>();
+    const key = fp?.k ?? "";
+    if (!vecCache || vecCache.key !== key) vecCache = { key, vecs: await loadVecs(db) };
+    const [qv] = await embed(ai, [query]);
+    if (!qv) return null;
+    const sims = new Map<string, number>();
+    for (const r of rows) { const v = vecCache.vecs.get(r.id); if (v) sims.set(r.id, cos(qv, v)); }
+    return { sims, vecs: vecCache.vecs };
+  } catch (e) {
+    console.error("[recall] hybrid fallback to bm25", e);
+    return null;
+  }
+}
+async function loadTagMap(db: MemoryDb): Promise<Map<string, { topic?: string[]; people?: string[]; mood?: string[] }>> {
+  const out = new Map<string, { topic?: string[]; people?: string[]; mood?: string[] }>();
+  try {
+    const r = await db.prepare(`SELECT id, topic, people, mood FROM memories WHERE topic IS NOT NULL OR people IS NOT NULL OR mood IS NOT NULL`).all<{ id: string; topic: string | null; people: string | null; mood: string | null }>();
+    const arr = (s: string | null) => { try { const v = JSON.parse(s ?? "null"); return Array.isArray(v) ? v.map(String) : undefined; } catch { return undefined; } };
+    for (const x of r.results ?? []) out.set(x.id, { topic: arr(x.topic), people: arr(x.people), mood: parseMoods(x.mood) });
+  } catch { /* 还没有标签列 */ }
+  return out;
+}
+const TOPIC_HINTS: [string, RegExp][] = [
+  ["亲密", /亲亲|抱抱|拥抱|想你|爱你|亲密|贴贴|吻/], ["吵架", /吵架|生气|冷战|凶|讨厌你|吵/], ["和好", /和好|原谅|对不起|道歉/],
+  ["承诺", /答应|承诺|保证|约定|发誓|永远/], ["身体", /身体|疼|痛|累|生病|睡不着|发烧|月经|头疼/], ["梦", /梦/],
+  ["工作", /工作|上班|加班|老板|同事|项目|代码/], ["第一次", /第一次/], ["失落", /难过|失落|想哭|哭了|孤单|好累|失望/],
+];
+export function inferQueryTags(q: string, knownPeople: Iterable<string> = []): { topic: Set<string>; people: Set<string> } {
+  const topic = new Set<string>(); const people = new Set<string>();
+  for (const [t, re] of TOPIC_HINTS) if (re.test(q)) topic.add(t);
+  // people 标签是自由文本（人格 id / 名字）：本句里直接出现了这个名字就算一致。
+  for (const name of knownPeople) if (name.length >= 1 && q.includes(name)) people.add(name);
+  return { topic, people };
+}
+
 export async function autoRecall(
   db: MemoryDb,
   caller: Caller,
@@ -527,8 +579,10 @@ export async function autoRecall(
     surfaced_ids?: string[];
     now_ms?: number;
     rand?: () => number;
+    dry_run?: boolean;
   },
 ) {
+  const dry = !!input.dry_run;
   const nowMs = input.now_ms ?? Date.now();
   const p = caller.persona;
   const query = [input.prev_message?.trim(), input.message.trim()].filter(Boolean).join("\n");
@@ -555,10 +609,13 @@ export async function autoRecall(
     associated: [] as string[],
     cognition_first: [] as string[],
     cognition_offered: "" as string,
+    mode: "" as string,
+    top_sims: [] as string[],
+    skipped_dup: [] as string[],
   };
   const finish = async (text: string, memories: LabeledMemory[]) => {
-    // 认知邀请（限频、只给伙伴）：附在浮现文本末尾，不影响 memories 列表
-    const offer = await maybeCognitionNote(db, p.id, nowMs);
+    // 认知邀请（限频、只给 COGNITION_PERSONAS）：附在浮现文本末尾，不影响 memories 列表
+    const offer = dry ? { note: "", id: "" } : await maybeCognitionNote(db, p.id, nowMs);
     if (offer.note) { text = text ? text + offer.note : offer.note.trim(); debug.cognition_offered = offer.id ?? ""; }
     console.log(JSON.stringify({ evt: "auto_recall", persona: p.id, ...debug }));
     return { text, memories, matched: memories.length, ...(input.debug ? { debug } : {}) };
@@ -566,7 +623,7 @@ export async function autoRecall(
   const all = await ownAndFamily(db, p.id, 800);
   const rows = all.filter((r) => !isRecallNoise(r));
   // 强化：上一轮浮现过的记忆，关键词真的出现在人格回复里 → 算「用到了」
-  if (input.last_reply && input.surfaced_ids?.length) {
+  if (!dry && input.last_reply && input.surfaced_ids?.length) {
     const replyToks = new Set(tokens(input.last_reply));
     const byIdAll = new Map(all.map((r) => [r.id, r]));
     for (const id of input.surfaced_ids.slice(0, 10)) {
@@ -586,8 +643,39 @@ export async function autoRecall(
   if (!toks.length) return finish("", []);
   debug.scanned = rows.length;
   const scoredAll = scoreRecall(rows, toks);
-  const ranked = scoredAll.filter((c) => c.hits.length >= RECALL_MIN_HITS && c.relevance >= RECALL_MIN_BM25);
-  const scoreOf = Object.fromEntries(scoredAll.map((c) => [c.id, c.relevance]));
+  const bm25Pass = new Set(scoredAll.filter((c) => c.hits.length >= RECALL_MIN_HITS && c.relevance >= RECALL_MIN_BM25).map((c) => c.id));
+  // —— 混合：向量（bge-m3）为主，关键词为辅；不够像宁可不浮现 ——
+  const hy = await hybridSims(db, query, rows);
+  // 方案 A：心境一致性——当前情绪色调只做小偏置（±0.02），相似度门槛不变
+  const tone = await readTone(db, p.id);
+  let tagMapAll: Awaited<ReturnType<typeof loadTagMap>> | null = null;
+  let ranked: RecallCandidate[];
+  if (hy) {
+    const scoredById = new Map(scoredAll.map((c) => [c.id, c]));
+    const tagMap = await loadTagMap(db);
+    const qTags = inferQueryTags(query, new Set([...tagMap.values()].flatMap((t) => t.people ?? [])));
+    tagMapAll = tagMap;
+    const cands: RecallCandidate[] = [];
+    for (const r of rows) {
+      const sim = hy.sims.get(r.id);
+      if (sim == null) continue;
+      if (!(sim >= RECALL_MIN_SIMILARITY || (bm25Pass.has(r.id) && sim >= RECALL_SOFT_SIMILARITY))) continue;
+      const b = scoredById.get(r.id);
+      const t = tagMap.get(r.id);
+      let boost = 0;
+      if (t?.topic?.some((x) => qTags.topic.has(x))) boost += RECALL_TAG_BOOST;
+      if (t?.people?.some((x) => qTags.people.has(x))) boost += RECALL_TAG_BOOST;
+      const score = sim + 0.1 * Math.min((b?.relevance ?? 0) / 10, 1) + boost + recallBias(tone, t?.mood);
+      cands.push({ id: r.id, hits: b?.hits ?? [], relevance: Math.round(score * 1000) / 1000, importance: r.importance, recency: recencyFactor(r, nowMs) });
+    }
+    ranked = cands.sort((a, b) => b.relevance - a.relevance || b.importance - a.importance);
+    debug.mode = "hybrid";
+    debug.top_sims = [...hy.sims.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([id, s]) => `${id}(${s.toFixed(3)})`);
+  } else {
+    ranked = scoredAll.filter((c) => bm25Pass.has(c.id));
+    debug.mode = "bm25";
+  }
+  const scoreOf: Record<string, number> = Object.fromEntries((hy ? ranked : scoredAll).map((c) => [c.id, c.relevance]));
   const fmt = (id: string) => `${id}(${scoreOf[id] ?? "?"})`;
   debug.candidates = scoredAll.length;
   debug.above_threshold = ranked.length;
@@ -599,7 +687,8 @@ export async function autoRecall(
   const weighted: (RecallCandidate & { w: number })[] = [];
   for (const c of ranked) {
     const r = rowById.get(c.id)!;
-    const w = surfaceWeight(r, { nowMs, recentOverlap: c.hits.some((h) => prevToks.has(h)), rand: input.rand });
+    const w0 = surfaceWeight(r, { nowMs, recentOverlap: c.hits.some((h) => prevToks.has(h)), rand: input.rand, auto: true, ...(!hy && tone ? { cong: toneCos(tone.vec, memToneVec(moodOf(r))), toneIntensity: tone.intensity } : {}) });
+    const w = hy && w0 > 0 ? 1 + 0.1 * (w0 - 1) : w0; // 混合模式：相似度为主，情绪/上句重叠只微调
     if (w <= 0) { debug.zero_weight.push(fmt(c.id)); continue; }
     weighted.push({ ...c, w });
   }
@@ -627,6 +716,16 @@ export async function autoRecall(
         if (first.length) { fresh = [...first, ...fresh.filter((c) => !seen.has(c.id))]; debug.cognition_first = first.map((c) => c.id); }
       }
     } catch (e) { console.error("[cognition] first", e); }
+  }
+  // 去重：和已选的某条太像（同一件事的两条）→ 只留一条
+  if (hy) {
+    const kept: typeof fresh = [];
+    for (const c of fresh) {
+      const v = hy.vecs.get(c.id);
+      if (v && kept.some((k) => { const kv = hy.vecs.get(k.id); return !!kv && cos(v, kv) > RECALL_DUP_SIMILARITY; })) { debug.skipped_dup.push(fmt(c.id)); continue; }
+      kept.push(c);
+    }
+    fresh = kept;
   }
   const picked = fresh.slice(0, limit);
   const cut = fresh.slice(limit);
@@ -657,7 +756,8 @@ export async function autoRecall(
     try {
       const assoc = await associate(db, memories.map((m) => m.id), byId, exclude, nowMs);
       for (const a of assoc) {
-        if (surfaceWeight(a.row, { nowMs, rand: () => 0 }) <= 0) continue;
+        if (surfaceWeight(a.row, { nowMs, rand: () => 0, auto: true }) <= 0) continue;
+        if (hy) { const va = hy.vecs.get(a.row.id), vf = hy.vecs.get(a.from); if (!va || !vf || cos(va, vf) < ASSOC_MIN_SIM) continue; if (memories.some((m) => { const vm = hy.vecs.get(m.id); return !!vm && cos(va, vm) > RECALL_DUP_SIMILARITY; })) { debug.skipped_dup.push(a.row.id + "(assoc)"); continue; } }
         const line = `[#${a.row.id} · 牵出来的 ← #${a.from}] ${clip(a.row.content, ASSOC_CLIP)}`;
         if (used + [...line].length > maxChars) continue;
         used += [...line].length;
@@ -678,10 +778,15 @@ export async function autoRecall(
           }
         }
       }
-      if (memories.length >= 2) await coRecall(db, memories.map((m) => m.id), new Date(nowMs).toISOString());
+      if (!dry && memories.length >= 2) await coRecall(db, memories.map((m) => m.id), new Date(nowMs).toISOString());
     } catch (e) { console.error("[links] assoc", e); }
   }
-  if (memories.length) {
+  if (memories.length && !dry && tone) {
+    // 方案 A：想起的记忆回流一点情绪（只插一行待办，下次结算时懒应用）
+    if (!tagMapAll) tagMapAll = await loadTagMap(db);
+    await queueRecallNudge(db, p.id, memories.map((m) => ({ id: m.id, moods: tagMapAll!.get(m.id)?.mood ?? moodOf(byId.get(m.id)) ?? [] })), nowMs);
+  }
+  if (memories.length && !dry) {
     try {
       const t = new Date(nowMs).toISOString();
       await db

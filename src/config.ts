@@ -12,6 +12,8 @@
  *   DREAM_ENABLED      "1" turns nightly dreams on (18+)                      (default OFF)
  *   DREAM_PERSONA      persona that dreams                                    (default PRIMARY_PERSONA)
  *   COGNITION_PERSONAS comma list for cognition clustering                    (default PRIMARY_PERSONA)
+ *   RECALL_SEMANTIC    "0" = keyword-only (BM25) auto-recall even if the AI   (default: semantic when
+ *                      binding exists                                         the AI binding exists)
  */
 export interface ConfigEnv {
   USER_NAME?: string;
@@ -24,6 +26,7 @@ export interface ConfigEnv {
   DREAM_ENABLED?: string;
   BODY_PERSONAS?: string;
   DREAM_PERSONA?: string;
+  RECALL_SEMANTIC?: string;
 }
 
 function list(raw: string | undefined): string[] {
@@ -44,6 +47,7 @@ export const CFG = {
   emotion: new Set<string>(),
   body: new Set<string>(),
   cognition: new Set<string>(["companion"]),
+  semanticRecall: true,
 };
 
 export function applyConfig(env: ConfigEnv): void {
@@ -57,6 +61,7 @@ export function applyConfig(env: ConfigEnv): void {
   refill(CFG.emotion, env.EMOTION_ENABLED !== "1" ? [] : pick(env.EMOTION_PERSONAS));
   refill(CFG.body, CFG.adult ? pick(env.BODY_PERSONAS) : []);
   refill(CFG.cognition, pick(env.COGNITION_PERSONAS));
+  CFG.semanticRecall = env.RECALL_SEMANTIC !== "0";
 }
 
 /** Local-time Date shifted by the configured offset (read with getUTC* / toISOString). */

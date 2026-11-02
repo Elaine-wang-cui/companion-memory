@@ -23,7 +23,8 @@ directory = "./public"
 binding = "ASSETS"
 run_worker_first = true
 
-# Optional: Workers AI (body-state classifier, dreams). Remove if you don't want it.
+# Optional: Workers AI (semantic auto-recall via bge-m3 embeddings, links, body-state classifier, dreams).
+# Remove it and auto-recall falls back to keyword (BM25) search — no other config needed.
 [ai]
 binding = "AI"
 
@@ -45,6 +46,7 @@ DREAM_ENABLED = "0"
 # BODY_PERSONAS = "companion"
 # DREAM_PERSONA = "companion"
 # COGNITION_PERSONAS = "companion"
+# RECALL_SEMANTIC = "0"          # force keyword-only auto-recall even with the AI binding
 BODY_STROKE_LOOP = "0"
 DESIRE_WAKE = "0"
 # BODY_CLASSIFIER = "external"   # use an OpenAI-compatible API instead of Workers AI

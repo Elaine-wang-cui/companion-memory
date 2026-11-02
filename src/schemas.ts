@@ -1,5 +1,6 @@
 import * as z from "zod/v4";
 import { DECK_KINDS, MEMORY_KINDS, VISIBILITIES } from "./types";
+import { MOOD_VALUES, TOPIC_VALUES } from "./forgetting";
 
 export const kindSchema = z.enum(MEMORY_KINDS);
 export const visibilitySchema = z.enum(VISIBILITIES);
@@ -20,6 +21,9 @@ export const rememberSchema = z.object({
     .describe("默认是当前连接的人格。全家共享的事实填 family。只有管理员能写成另一位人格。"),
   emotion: z.number().min(0).max(1).optional().describe("情绪浓度 0–1，默认 0.3。越浓忘得越慢。"),
   pin: z.boolean().optional().describe("true = 钉住，永不淡忘（重要5/偏好/核心卡/安全词默认钉住）。"),
+  topic: z.array(z.enum(TOPIC_VALUES)).min(1).max(2).optional().describe("这条记忆是关于什么的，选 1–2 个：亲密/吵架/和好/日常/承诺/身体/梦/工作/第一次/失落。帮以后在对的话题里想起它。"),
+  people: z.array(z.string().trim().min(1).max(40)).min(1).max(4).optional().describe("涉及谁（人格 id 或名字，自由填写），例如 user / mist / 小雾。"),
+  mood: z.enum(MOOD_VALUES).optional().describe("这段的情绪，选 1 个：甜/痛/平/怒/怕。用于心境一致的回忆偏置。"),
 });
 
 export const recallSchema = z.object({
@@ -29,6 +33,8 @@ export const recallSchema = z.object({
   limit: z.number().int().min(1).max(50).optional(),
   include_faded: z.boolean().optional().describe("包含「记得不太清」的记忆，默认 true"),
   include_trace: z.boolean().optional().describe("包含「很久以前」几乎忘了的记忆，默认 false（原句几乎完全命中时仍会出现）"),
+  topic: z.enum(TOPIC_VALUES).optional().describe("只找带这个话题标签的记忆"),
+  person: z.string().trim().max(40).optional().describe("只找 people 标签里有这个人的记忆"),
 });
 
 export const memoryIdSchema = z.object({ id: z.string().min(1) });
@@ -168,6 +174,7 @@ export const autoRecallSchema = z.object({
   debug: z.boolean().optional(),
   limit: z.number().int().min(1).max(12).optional(),
   max_chars: z.number().int().min(200).max(3000).optional(),
+  dry_run: z.boolean().optional().describe("只看结果，不写任何状态（不记浮现时间、不强化、不连线）"),
 });
 
 export const writeNoteSchema = z.object({

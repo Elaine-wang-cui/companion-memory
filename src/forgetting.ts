@@ -180,7 +180,7 @@ export async function reinforceMemory(db: MemoryDb, row: Row & { id: string }, n
 export const SURFACE_COOLDOWN_MS = 48 * 3600_000;
 export const TRACE_SURFACE_CHANCE = 0.05;
 /** 返回乘子（0 = 不浮现）。recentOverlap = 命中词也出现在最近对话里。 */
-export function surfaceWeight(r: Row, opts: { nowMs?: number; recentOverlap?: boolean; rand?: () => number } = {}): number {
+export function surfaceWeight(r: Row, opts: { nowMs?: number; recentOverlap?: boolean; rand?: () => number; auto?: boolean; cong?: number; toneIntensity?: number } = {}): number {
   const now = opts.nowMs ?? Date.now();
   const last = r.last_surfaced_at ? Date.parse(r.last_surfaced_at) : NaN;
   if (Number.isFinite(last) && now - last < SURFACE_COOLDOWN_MS) return 0;
@@ -188,12 +188,33 @@ export function surfaceWeight(r: Row, opts: { nowMs?: number; recentOverlap?: bo
   const s = strengthNow(r, now);
   let w: number;
   if (st === "trace") {
+    if (opts.auto) return 0; // 自动浮现：不再随机冒出几乎忘掉的（显式 recall 仍可找到）
     if ((opts.rand ?? Math.random)() >= TRACE_SURFACE_CHANCE) return 0;
     w = 0.5;
   } else if (st === "faded") {
-    w = s >= 0.2 && s <= 0.4 ? 1.5 : 0.8; // 偏爱「快忘了」的那段
+    w = opts.auto ? 0.8 : s >= 0.2 && s <= 0.4 ? 1.5 : 0.8; // 自动浮现不偏爱「快忘了」；手动 recall 偏爱那段
   } else w = 1;
   w *= 1 + emotionOf(r);
   if (opts.recentOverlap) w *= 2;
+  // 方案 A：心境一致（0..1）× 情绪强度 → ±15% 以内（仅 bm25 回退模式会传）
+  if (opts.cong != null) w *= 1 + 0.3 * (opts.cong - 0.5) * Math.max(0, Math.min(1, opts.toneIntensity ?? 0));
   return w;
+}
+
+// —— 保存时标签：topic / people / mood，JSON 文本列（迁移 0017；运行时也会自动补列）——
+// topic / mood 是固定小词表（方便浮现时按话题、心境加权）；people 是自由文本（人格 id 或名字）。
+export const TOPIC_VALUES = ["亲密", "吵架", "和好", "日常", "承诺", "身体", "梦", "工作", "第一次", "失落"] as const;
+export const MOOD_VALUES = ["甜", "痛", "平", "怒", "怕"] as const;
+let tagReady = false;
+export async function ensureTagColumns(db: MemoryDb): Promise<void> {
+  if (tagReady) return;
+  try {
+    await db.prepare(`SELECT topic, people, mood FROM memories LIMIT 1`).first();
+    tagReady = true;
+    return;
+  } catch { /* migrate */ }
+  for (const col of [`topic TEXT`, `people TEXT`, `mood TEXT`]) {
+    try { await db.prepare(`ALTER TABLE memories ADD COLUMN ${col}`).run(); } catch { /* exists */ }
+  }
+  tagReady = true;
 }

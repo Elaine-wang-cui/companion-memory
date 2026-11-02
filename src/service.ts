@@ -1,4 +1,5 @@
 import { scheduleLinking, nudgeNeighbors } from "./links";
+import { ensureTagColumns } from "./forgetting";
 import { AppError } from "./errors";
 import { safeEnqueueNotionOutbox } from "./notion-sync";
 import {
@@ -142,6 +143,9 @@ export interface RememberInput {
   owner?: string;
   emotion?: number;
   pin?: boolean;
+  topic?: string[];
+  people?: string[];
+  mood?: string;
 }
 
 export async function remember(db: MemoryDb, caller: Caller, input: RememberInput) {
@@ -210,6 +214,14 @@ export async function remember(db: MemoryDb, caller: Caller, input: RememberInpu
       decay.state,
     )
     .run();
+  if (input.topic?.length || input.people?.length || input.mood) {
+    try {
+      await ensureTagColumns(db);
+      await db.prepare(`UPDATE memories SET topic = ?, people = ?, mood = ? WHERE id = ?`)
+        .bind(input.topic?.length ? JSON.stringify([...new Set(input.topic)]) : null, input.people?.length ? JSON.stringify([...new Set(input.people)]) : null, input.mood ?? null, memory.id)
+        .run();
+    } catch (e) { console.error("[tags] save", e); }
+  }
   try { scheduleLinking(memory.id); } catch (e) { console.error("[links] schedule", e); }
   const names = await nameMap(db);
   const labeled = labelMemory(memory, caller.persona.id, names);
@@ -235,6 +247,8 @@ export interface RecallInput {
   limit?: number;
   include_faded?: boolean;
   include_trace?: boolean;
+  topic?: string;
+  person?: string;
   now_ms?: number;
 }
 
@@ -252,8 +266,13 @@ export async function recall(db: MemoryDb, caller: Caller, input: RecallInput) {
   const limit = Math.min(Math.max(finalLimit * 3, 30), 150); // 先多取，再按 相关度×强度 重排
   const callerId = caller.persona.id;
   const owner = ownerFilter(input.owner, callerId);
-  const kindSql = input.kind ? "kind = ?" : "1 = 1";
-  const kindParams = input.kind ? [input.kind] : [];
+  // 话题 / 人物标签筛选（JSON 数组文本列，按 "值" 子串匹配）；与 kind 条件合并，方便各分支复用
+  const kindConds: string[] = []; const kindParams: unknown[] = [];
+  if (input.kind) { kindConds.push("kind = ?"); kindParams.push(input.kind); }
+  if (input.topic || input.person) await ensureTagColumns(db);
+  if (input.topic) { kindConds.push("topic LIKE ?"); kindParams.push(`%${JSON.stringify(input.topic)}%`); }
+  if (input.person) { kindConds.push("people LIKE ?"); kindParams.push(`%${JSON.stringify(input.person)}%`); }
+  const kindSql = kindConds.length ? kindConds.join(" AND ") : "1 = 1";
   const query = input.query?.normalize("NFKC").trim() ?? "";
   const vis = visibilityClause(caller);
   const baseParams = [...vis.params, ...owner.params, ...kindParams];
@@ -288,7 +307,7 @@ export async function recall(db: MemoryDb, caller: Caller, input: RecallInput) {
            WHERE memories_fts MATCH ?
              AND ${ftsVis}
              AND ${owner.sql.replaceAll("owner_persona", "m.owner_persona")}
-             AND ${kindSql.replaceAll("kind", "m.kind")}
+             AND ${kindSql.replace("kind = ?", "m.kind = ?").replace("topic LIKE", "m.topic LIKE").replace("people LIKE", "m.people LIKE")}
            ORDER BY memories_fts.rank, m.importance DESC, m.updated_at DESC
            LIMIT ?`,
         )
