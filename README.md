@@ -71,10 +71,24 @@ Local only: `npm run db:migrate:local && npm run seed && npm run dev` (no Cloudf
 
 Use `/mcp/house` instead of `/mcp` for the multi-persona entry. Set `USER_NAME` and `TZ_OFFSET_MINUTES` in `[vars]` first.
 
+**Semantic auto-recall (optional)**
+
+With the Workers AI `AI` binding present, auto-recall becomes hybrid: `@cf/baai/bge-m3` cosine similarity is the main signal (it finds paraphrases), BM25 keywords add a small bonus, and near-duplicates (cosine > 0.9) are collapsed. A memory surfaces only if similarity ≥ 0.62 (0.56 if BM25 also matched). Random surfacing of almost-forgotten (`trace`) memories is off; they still show up in explicit `recall`.
+
+`remember` accepts optional save-time tags: `topic` (small fixed list), `people` (free-form names / persona ids) and `mood` (甜/痛/平/怒/怕). Matching tags give a small boost, and `recall` can filter by `topic` / `person`. Migration `0017_memory_tags.sql` adds the columns (they are also added at runtime). With the emotion module on, the current mood biases recall toward mood-congruent memories (bounded to a few percent).
+
+Zero config still works: no `AI` binding, `RECALL_SEMANTIC="0"`, or any embedding error → plain BM25 as before. `auto_recall` takes `dry_run: true` to inspect results without writing state; `debug` shows `mode`, `top_sims`, `skipped_dup`.
+
+**Emotion star map (18+ module, off by default)**
+
+![Emotion star map: dimensions as stars, learned couplings as edges (fictional data)](docs/screenshots/emotion.png)
+
+When `EMOTION_ENABLED="1"`, `/emotion` (atlas key) draws the companion's current emotional state: each dimension is a star (brightness = level), with the learned couplings between dimensions as edges. v2 (migration `0016_emotion_v2.sql`) adds a small substrate of slow undertones, the 不安 / 恐惧 / 恐慌 (unease / fear / panic) dimensions, Hebbian coupling learned from co-occurring changes, cue associations (`update_emotions` takes optional `cues`, and `reason` is now optional), and a mood-congruent recall bias. Data: `GET /api/emotion-map?persona=<id>`.
+
 **Limitations (honest list)**
 
 - Tool descriptions, prompts and most docs are in Chinese; the tokenizer and thresholds are tuned for Chinese text.
-- Retrieval is lexical (BM25 + trigram FTS) with optional AI-based linking, not embeddings-first. It misses paraphrases.
+- Without the Workers AI binding, retrieval is lexical (BM25 + trigram FTS) and misses paraphrases. Semantic thresholds are tuned for bge-m3 on Chinese chat; other models need retuning. Embeddings are Workers AI only (no OpenAI-compatible embedding provider yet).
 - Single-user by design: one human, several personas. No multi-tenant isolation beyond per-persona keys.
 - Tied to Cloudflare Workers / D1. Decay constants and thresholds are hand-tuned, not evaluated on any benchmark.
 - Built and used by one household; expect rough edges.
@@ -124,6 +138,12 @@ DREAM_ENABLED   = "1"
 
 关着时对应的 MCP 工具不注册、REST 接口返回 404、cron 不再推进这些数值。打开后可以用 `EMOTION_PERSONAS` / `BODY_PERSONAS` 只给特定人格开。
 
+### 新：语义浮现 + 情绪星图 v2
+
+- **语义浮现（可选）**：有 Workers AI 绑定（`[ai] binding = "AI"`）时，自动浮现改为「向量为主、关键词为辅」，能按意思想起来；几乎重复的只留一条；不再随机冒出几乎忘掉的记忆。没绑定、`RECALL_SEMANTIC="0"` 或向量出错时，自动回到原来的 BM25，零配置也能用。
+- **保存时标签**：`remember` 可带 `topic` / `people` / `mood`，浮现时轻微加权，`recall` 可按 `topic` / `person` 筛选。迁移 `0017_memory_tags.sql`。
+- **情绪星图 v2（18+，默认关）**：`/emotion` 页面；新增 不安/恐惧/恐慌 维度、慢底色、赫布式耦合、线索联想、心境一致的回忆偏置；`update_emotions` 的 `reason` 改为可选。迁移 `0016_emotion_v2.sql`。
+
 ## 快速开始（Cloudflare）
 
 ```bash
@@ -158,6 +178,7 @@ npm run deploy
 | `EMOTION_ENABLED` / `BODY_ENABLED` / `DREAM_ENABLED` | 18+ 模块开关，默认关，`1` 开 |
 | `EMOTION_PERSONAS` / `BODY_PERSONAS` / `COGNITION_PERSONAS` | 逗号分隔的人格 id |
 | `DREAM_PERSONA` | 谁做梦 |
+| `RECALL_SEMANTIC` | 设 `0` 强制关键词浮现（默认：有 AI 绑定就用语义） |
 | `BODY_CLASSIFIER` | `workers-ai`（默认）/ `api` / `off` |
 | `CLASSIFIER_API_URL` / `CLASSIFIER_MODEL` + secret `CLASSIFIER_API_KEY` | 任意 OpenAI 兼容接口，可选 |
 | `PEER_FRIENDS` / `PEER_WEBHOOK_URL` + secret `PEER_WEBHOOK_AUTH` | 见 PEERS.md |
