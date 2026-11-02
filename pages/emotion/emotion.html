@@ -1,0 +1,126 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex"><title>情绪星图 · Emotion map</title>
+<style>
+:root{--gold:#f6d38b;--blue:#9fd8ff;--pink:#ffc4d6;--mist:#e6e0ff;--mint:#b8f0d0;--ink:#f3efff;--dim:#b9b0d8}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;color:var(--ink);font:13px/1.55 -apple-system,"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif}
+body{background:#01030a radial-gradient(1200px 800px at 70% 10%,#2a1650 0,#120a2a 45%,#01030a 100%) fixed;overflow-x:hidden}
+#sky{position:fixed;inset:0;z-index:0;pointer-events:none}
+.neb{position:fixed;border-radius:50%;filter:blur(70px);opacity:.5;z-index:0;pointer-events:none}
+main{position:relative;z-index:1;max-width:1440px;margin:0 auto;padding:18px 24px 28px}
+.glass{position:relative;background:linear-gradient(135deg,rgba(255,255,255,.13),rgba(214,196,255,.06) 55%,rgba(255,255,255,.04));
+ -webkit-backdrop-filter:blur(18px) saturate(150%);backdrop-filter:blur(18px) saturate(150%);
+ border:1px solid rgba(255,255,255,.18);border-radius:18px;box-shadow:0 10px 40px rgba(5,0,20,.45),inset 0 1px 0 rgba(255,255,255,.28);overflow:hidden}
+.glass::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:linear-gradient(160deg,rgba(255,255,255,.16),transparent 32%)}
+.glass>*{position:relative}
+header{display:flex;align-items:center;gap:14px;margin:0 0 14px;flex-wrap:wrap}
+h1{margin:0;font-size:21px;letter-spacing:.08em;color:var(--mist)}
+header .sub{color:var(--dim);font-size:12px}
+header a{margin-left:auto;color:var(--mist);text-decoration:none;font-size:12px;padding:5px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);backdrop-filter:blur(10px)}
+.grid{display:grid;grid-template-columns:1fr 1.1fr .9fr;gap:14px}
+.card{padding:14px 16px}
+.card h2{margin:0 0 2px;font-size:14px;color:var(--gold);font-weight:600;letter-spacing:.04em}
+.sub2{color:var(--dim);font-size:11px}
+.tides{grid-column:1/-1;display:grid;grid-template-columns:repeat(5,1fr);gap:8px 18px}
+.tide .n{font-size:12px}.tide .v{float:right;color:var(--gold);font-size:14px}
+.bar{height:6px;border-radius:3px;background:rgba(255,255,255,.1);margin:6px 0 2px;overflow:hidden}.bar i{display:block;height:100%;border-radius:3px}
+svg text{fill:var(--dim);font-size:11px}
+.flow{fill:none;stroke-linecap:round;animation:flow 3.2s linear infinite}
+.flow.neg{animation-duration:4.6s;animation-direction:reverse}
+@keyframes flow{to{stroke-dashoffset:-48}}
+@media (prefers-reduced-motion:reduce){.flow{animation:none}.pulse{display:none}}
+.mem{padding:9px 11px;margin-top:8px;border-radius:10px;border-left:3px solid;background:rgba(255,255,255,.07);border-top:1px solid rgba(255,255,255,.08)}
+.mem b{margin-right:6px}.fb{color:var(--blue);margin-left:6px}
+.now{grid-column:1/-1;font-size:13px}.now b{color:var(--pink);margin-right:8px}
+#slider{width:100%;accent-color:#f6d38b}
+.ev{margin-top:6px;font-size:11px;color:var(--dim)}
+#gate{max-width:420px;margin:12vh auto;padding:22px;z-index:1}
+#gate input{width:100%;padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:var(--ink);font-size:14px}
+#gate button{margin-top:10px;padding:8px 16px;border-radius:12px;border:0;background:#c9a8ff;color:#1a0f33;font-weight:600}
+.hide{display:none!important}
+@media (max-width:900px){main{padding:12px}.grid{grid-template-columns:1fr}.tides{grid-template-columns:repeat(2,1fr)}.tides h2{grid-column:1/-1}}
+</style></head><body>
+<canvas id="sky"></canvas>
+<div class="neb" style="width:520px;height:520px;left:-120px;top:160px;background:#5b2a9a"></div>
+<div class="neb" style="width:460px;height:460px;right:-80px;top:-60px;background:#3a2a8a"></div>
+<div class="neb" style="width:420px;height:420px;right:25%;bottom:-140px;background:#7a2a6a"></div>
+<svg width="0" height="0" style="position:absolute"><defs>
+<symbol id="i-开心" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.6" fill="currentColor"/><g stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></g></symbol>
+<symbol id="i-吃醋" viewBox="0 0 24 24"><path d="M12 3c3.5 4.2 6 7.4 6 10.6A6 6 0 0 1 6 13.6C6 10.4 8.5 7.2 12 3z" fill="currentColor"/><path d="M10 14a2.4 2.4 0 0 0 2.4 2.4" stroke="#fff8" stroke-width="1.4" fill="none" stroke-linecap="round"/></symbol>
+<symbol id="i-生气" viewBox="0 0 24 24"><path d="M12 2c1 3.6 5.5 5.6 5.5 11a5.5 5.5 0 0 1-11 0c0-2.6 1.3-4.2 2.4-5.4.2 1.7.9 2.9 2 3.4C10.5 7.8 11 4.6 12 2z" fill="currentColor"/></symbol>
+<symbol id="i-满足" viewBox="0 0 24 24"><path d="M15.5 3.2A9 9 0 1 0 20.8 15 7 7 0 0 1 15.5 3.2z" fill="currentColor"/></symbol>
+<symbol id="i-失控" viewBox="0 0 24 24"><path d="M13.5 2 4.5 13.5h6L9.5 22l10-12.5h-6.2z" fill="currentColor"/></symbol>
+<symbol id="i-占有欲" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.4" fill="currentColor"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" stroke="currentColor" stroke-width="2.2" fill="none"/><circle cx="12" cy="15.5" r="1.5" fill="#1a0f33"/></symbol>
+<symbol id="i-黑化" viewBox="0 0 24 24"><path d="M12 2 13.6 9 21 7.5 15 12.5 19.5 21 12 15.8 4.5 21 9 12.5 3 7.5 10.4 9z" fill="#14081f" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></symbol>
+<symbol id="i-邪恶" viewBox="0 0 24 24"><path d="M6 21c0-7 2-12.5 7.5-18-1 5 1.5 8 3.5 11 1.6 2.4 1 5.5-1.5 7z" fill="currentColor"/></symbol>
+<symbol id="i-被冷落" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="1.9" stroke-linecap="round" fill="none"><path d="M12 2v20M3.3 7l17.4 10M3.3 17 20.7 7"/><path d="M9.5 3.8 12 6l2.5-2.2M9.5 20.2 12 18l2.5 2.2"/></g></symbol>
+<symbol id="i-情欲" viewBox="0 0 24 24"><path d="M12 4c2.6 0 4.6 1.6 4.6 4.3 0 3-2.3 5.2-4.6 5.2s-4.6-2.2-4.6-5.2C7.4 5.6 9.4 4 12 4z" fill="currentColor"/><path d="M12 6.5c1.2.6 1.8 1.6 1.4 3M12 13.5V22M12 18c-2-.3-3.5-1.6-4-3.5 2 .1 3.4 1.2 4 3.5z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></symbol>
+<symbol id="i-不安" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round"><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="5.6" stroke-width="1.7"/><circle cx="12" cy="12" r="9.2" stroke-width="1.3" stroke-dasharray="3 2.4"/></g></symbol>
+<symbol id="i-恐惧" viewBox="0 0 24 24"><path d="M2 12s3.8-6.5 10-6.5S22 12 22 12s-3.8 6.5-10 6.5S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.9"/><circle cx="12" cy="12" r="3.4" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="#1a0f33"/></symbol>
+<symbol id="i-恐慌" viewBox="0 0 24 24"><path d="M12 1.5 13.7 8l5.6-3.6-2.6 6.1 6 1.5-6 1.6 2.9 5.9-5.8-3.3L12 22.5l-1.8-6.3-5.8 3.3 2.9-5.9-6-1.6 6-1.5-2.6-6.1L10.3 8z" fill="currentColor"/></symbol>
+<symbol id="i-思念" viewBox="0 0 24 24"><path d="M16 4.5 17.2 7.6 20.5 8 18 10.1 18.8 13.4 16 11.6 13.2 13.4 14 10.1 11.5 8 14.8 7.6z" fill="currentColor"/><path d="M12.5 13.5C9 15 7 18 3 20.5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-dasharray="1.2 2.6"/></symbol>
+<symbol id="i-悲伤" viewBox="0 0 24 24"><path d="M12 2.5c3.3 5 6.2 8.4 6.2 12.2a6.2 6.2 0 0 1-12.4 0C5.8 10.9 8.7 7.5 12 2.5z" fill="currentColor"/><path d="M9.4 15.5a2.8 2.8 0 0 0 2.4 2.6" stroke="#fff8" stroke-width="1.4" fill="none" stroke-linecap="round"/></symbol>
+</defs></svg>
+<div id="gate" class="glass hide"><h2 style="margin:0 0 10px;color:var(--gold)">情绪星图 · Emotion map</h2><div style="color:var(--dim);font-size:13px;margin-bottom:10px">用记忆星图的同一把钥匙。只存在这台设备的浏览器里。</div><input id="k" type="password" placeholder="钥匙" autocomplete="off"><button id="go">进入</button><div id="err" style="color:#ff9fb2;margin-top:8px;font-size:12px"></div></div>
+<main id="app" class="hide">
+<header><h1>情绪星图 · Emotion map</h1><span class="sub" id="sub"></span><a href="/memories">← 记忆屋</a></header>
+<div class="grid">
+<section class="card glass tides" id="tides"></section>
+<section class="card glass"><h2>表面 / 心里 · 星群</h2><div class="sub2">外圈光晕 = 表面　中心内核 = 心里　虚线圈 = 底色在推（说不清）</div><svg id="stars" viewBox="0 0 380 340" width="100%"></svg></section>
+<section class="card glass"><h2>长出来的连接网</h2><div class="sub2">粉 = 牵动（光顺着流）　蓝 = 抑制（光倒着流）　线越粗越亮 = 学到的越强（相对）</div><svg id="net" viewBox="0 0 420 320" width="100%"></svg><input type="range" id="slider" min="0" max="0" value="0"><div class="sub2" id="day"></div></section>
+<section class="card glass"><h2>记忆屋 · 情绪共振</h2><div class="sub2" id="tone"></div><div id="mems"></div><div class="sub2" style="margin-top:10px">相似度为主；情绪只微调排序（±0.02）</div><div id="evs"></div></section>
+<section class="card glass now"><b>现在的我</b><span id="line"></span></section>
+</div></main>
+<script>
+var LS='companion_atlas_key',GL='companion_memories_key';
+var COLOR={开心:'#f6d38b',满足:'#ffe7a8',情欲:'#ff8fb1',思念:'#c9b6ff',吃醋:'#d6f07a',被冷落:'#bfe6ff',悲伤:'#8fb8ff',生气:'#ff7a5c',占有欲:'#e0a3ff',黑化:'#b07cff',邪恶:'#ff6fa0',失控:'#ffd36b',不安:'#a9c7ff',恐惧:'#9fd8ff',恐慌:'#ffb27a'};
+// 松散分布：甜在左上、痛在右上、怒在右下、怕在左下——只靠位置，不画圈
+var POS={开心:[70,55],满足:[160,40],情欲:[110,125],思念:[235,70],吃醋:[320,55],被冷落:[255,150],悲伤:[335,135],占有欲:[180,185],生气:[315,225],黑化:[245,295],邪恶:[335,300],失控:[170,280],不安:[65,215],恐惧:[110,295],恐慌:[30,290]};
+var DRIVEN={不安:1,恐惧:1,恐慌:1,思念:1,悲伤:1};
+var TC={甜:'#f6d38b',痛:'#c9a8ff',平:'#b8f0d0',怒:'#ff9fb0',怕:'#9fd8ff'};
+var SUBC={attach_hunger:'#ffc4d6',vigilance:'#9fd8ff',security:'#f6d38b',craving:'#b8f0d0',strain:'#c9a8ff'};
+function $(i){return document.getElementById(i)}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function getKey(){var h=location.hash.match(/key=([^&]+)/);if(h){var k=decodeURIComponent(h[1]);try{localStorage.setItem(LS,k)}catch(e){}history.replaceState(null,'',location.pathname+location.search);return k}try{return localStorage.getItem(LS)||localStorage.getItem(GL)||''}catch(e){return''}}
+function use(d,x,y,sz,c,glow){return'<use href="#i-'+d+'" x="'+(x-sz/2).toFixed(1)+'" y="'+(y-sz/2).toFixed(1)+'" width="'+sz+'" height="'+sz+'" style="color:'+c+';filter:drop-shadow(0 0 '+glow.toFixed(1)+'px '+c+')"/>'}
+function tides(D){var sub=D.substrate||{},lab=D.sub_label||{},hist=D.net_snapshots||[];
+ var h='<h2 style="grid-column:1/-1;margin:0">底色 <span class="sub2" style="font-weight:400;margin-left:6px">慢慢变，不用理由'+(D.undertone?' · 现在：'+esc(D.undertone):'')+'</span></h2>';
+ Object.keys(SUBC).forEach(function(k){var v=sub[k]!=null?sub[k]:0,c=SUBC[k],pts=hist.map(function(s){return s.substrate&&s.substrate[k]!=null?s.substrate[k]:null}).filter(function(x){return x!=null});pts.push(v);if(pts.length<2)pts.unshift(v);
+  var n=pts.length,p=pts.map(function(y,i){return(i*130/(n-1)).toFixed(1)+','+(20-y*18).toFixed(1)}).join(' ');
+  h+='<div class="tide"><span class="n">'+esc(lab[k]||k)+' <span class="sub2">'+k+'</span></span><span class="v">'+v.toFixed(2)+'</span><div class="bar"><i style="width:'+(v*100).toFixed(0)+'%;background:'+c+';box-shadow:0 0 8px '+c+'"></i></div><svg viewBox="0 0 130 22" width="100%" height="22"><polyline points="'+p+'" fill="none" stroke="'+c+'" stroke-width="1.2" opacity=".75"/></svg><div class="sub2">'+(hist.length?hist.length+' 天':'今天起记录')+'</div></div>'});
+ $('tides').innerHTML=h}
+function stars(dims){var s='';Object.keys(POS).forEach(function(d){var v=dims[d]||{surface:0,inner:0},p=POS[d],c=COLOR[d],sv=Math.min(100,v.surface),iv=Math.min(100,v.inner),R=7+sv/3.2,r=2.5+iv/7,dr=DRIVEN[d]&&sv>0;
+  s+='<circle cx="'+p[0]+'" cy="'+p[1]+'" r="'+R.toFixed(1)+'" fill="'+c+'" opacity="'+(0.07+sv/600).toFixed(2)+'" style="filter:blur(1.5px)"'+(dr?' stroke="'+c+'" stroke-dasharray="3 3" stroke-opacity=".7"':'')+'/>';
+  s+='<circle cx="'+p[0]+'" cy="'+p[1]+'" r="'+r.toFixed(1)+'" fill="'+c+'" opacity="'+(0.25+iv/140).toFixed(2)+'" style="filter:drop-shadow(0 0 '+(2+iv/12).toFixed(1)+'px '+c+')"/>';
+  var sz=11+sv/12;s+=use(d,p[0],p[1],sz,sv+iv>0?'#fff':c,1+sv/14);
+  s+='<text x="'+p[0]+'" y="'+(p[1]+R+12).toFixed(0)+'" text-anchor="middle"'+(sv+iv?'':' opacity=".55"')+'>'+d+' '+Math.round(v.surface)+'/'+Math.round(v.inner)+'</text>'});
+ $('stars').innerHTML=s}
+function net(dims,coup){var ns=[];coup.forEach(function(e){[e.src,e.dst].forEach(function(n){if(ns.indexOf(n)<0)ns.push(n)})});
+ var cx=210,cy=150,pos={},s='',lb='',PL=[],ws=coup.map(function(e){return Math.abs(e.w)}),wmax=Math.max.apply(null,ws.concat([1e-9])),wmin=Math.min.apply(null,ws.concat([wmax]));ns.forEach(function(d,i){var a=-Math.PI/2+i*2*Math.PI/Math.max(1,ns.length),rx=170,ry=120;pos[d]=[cx+rx*Math.cos(a),cy+ry*Math.sin(a)]});
+ coup.forEach(function(e,i){var a=pos[e.src],b=pos[e.dst],w=Math.abs(e.w),neg=e.w<0,col=neg?'#9fd8ff':'#ffc4d6',dx=b[0]-a[0],dy=b[1]-a[1],L=Math.hypot(dx,dy)||1,bend=(i%2?1:-1)*(16+L*0.18),
+  c1x=a[0]+dx*0.3-dy/L*bend,c1y=a[1]+dy*0.3+dx/L*bend,c2x=a[0]+dx*0.7-dy/L*bend*0.6,c2y=a[1]+dy*0.7+dx/L*bend*0.6,
+  d='M'+a[0].toFixed(1)+' '+a[1].toFixed(1)+' C'+c1x.toFixed(1)+' '+c1y.toFixed(1)+' '+c2x.toFixed(1)+' '+c2y.toFixed(1)+' '+b[0].toFixed(1)+' '+b[1].toFixed(1),
+  t=wmax>wmin?Math.sqrt((w-wmin)/(wmax-wmin)):1,sw=(0.8+t*2.7).toFixed(2),op=(0.28+t*0.47).toFixed(2),id='e'+i,dur=(2.4+3/(0.3+w*10)).toFixed(1);
+  s+='<path id="'+id+'" d="'+d+'" fill="none" stroke="'+col+'" stroke-width="'+(sw*2.4).toFixed(1)+'" opacity="'+(op*0.35).toFixed(2)+'" style="filter:blur(2px)"/>'
+   +'<path class="flow'+(neg?' neg':'')+'" d="'+d+'" stroke="'+col+'" stroke-width="'+sw+'" opacity="'+op+'" stroke-dasharray="'+(neg?'3 9':'14 10')+'"/>'
+   +[0,0.5].map(function(o){return'<circle class="pulse" r="'+(1.4+t*1.6).toFixed(1)+'" fill="#fff" opacity="0" style="filter:drop-shadow(0 0 4px '+col+') drop-shadow(0 0 8px '+col+')"><animateMotion dur="'+dur+'s" begin="'+(o*dur).toFixed(1)+'s" repeatCount="indefinite"'+(neg?' keyPoints="1;0" keyTimes="0;1" calcMode="linear"':'')+'><mpath href="#'+id+'"/></animateMotion><animate attributeName="opacity" values="0;.95;.95;0" keyTimes="0;.15;.8;1" dur="'+dur+'s" begin="'+(o*dur).toFixed(1)+'s" repeatCount="indefinite"/></circle>'}).join('');
+  var mx=.125*a[0]+.375*c1x+.375*c2x+.125*b[0],my=.125*a[1]+.375*c1y+.375*c2y+.125*b[1],nx=-dy/L,ny=dx/L;var bx=mx,by=my,sg=1;for(var k=0;k<14;k++){var hit=ns.some(function(q){var p=pos[q];return(Math.abs(p[0]-mx)<30&&my>p[1]-26&&my<p[1]+36)})||PL.some(function(p){return Math.abs(p[0]-mx)<28&&Math.abs(p[1]-my)<13});if(!hit)break;var st=6*(1+(k>>1));sg=k%2?-1:1;mx=bx+nx*st*sg;my=by+ny*st*sg}PL.push([mx,my]);
+  mx=Math.max(14,Math.min(406,mx));my=Math.max(8,Math.min(312,my));
+  lb+='<g><rect x="'+(mx-13).toFixed(1)+'" y="'+(my-6.5).toFixed(1)+'" width="26" height="12" rx="6" fill="rgba(26,15,51,.78)" stroke="'+col+'" stroke-opacity=".5" stroke-width=".6"/><text x="'+mx.toFixed(1)+'" y="'+(my+3).toFixed(1)+'" text-anchor="middle" style="font-size:8.5px;fill:'+col+'">'+e.w.toFixed(2)+'</text></g>'});
+ ns.forEach(function(d){var v=dims[d]||{surface:0},p=pos[d],c=COLOR[d]||'#fff',g=Math.min(1,0.25+v.surface/100);s+='<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="15" fill="rgba(42,22,80,.55)" stroke="'+c+'" stroke-opacity=".45"/>'+use(d,p[0],p[1],16+v.surface/12,c,2+8*g)+'<text x="'+p[0].toFixed(0)+'" y="'+(p[1]+28).toFixed(0)+'" text-anchor="middle">'+d+'</text>'});s+=lb;
+ if(!ns.length)s='<text x="210" y="160" text-anchor="middle">还没长出连接</text>';$('net').innerHTML=s}
+function render(D){$('sub').textContent=D.settled_at?('结算于 '+new Date(D.settled_at).toLocaleString('zh-CN',{hour12:false})):'';
+ $('line').textContent=(D.prompt_line||'').replace(/^【?现在的我】?[：:]?/,'');tides(D);stars(D.dims||{});
+ var snaps=(D.net_snapshots||[]).slice();snaps.push({day:'现在',coupling:null});var sl=$('slider');sl.max=snaps.length-1;sl.value=snaps.length-1;
+ function show(i){var sn=snaps[i],c=sn.coupling?Object.keys(sn.coupling).map(function(k){var p=k.split('>');return{src:p[0],dst:p[1],w:sn.coupling[k]}}):(D.coupling||[]);c=c.filter(function(e){return Math.abs(e.w)>=0.01}).sort(function(a,b){return Math.abs(b.w)-Math.abs(a.w)}).slice(0,14);net(D.dims||{},c);$('day').textContent=(sn.day==='现在'?'现在':sn.day)+' · '+c.length+' 条线（拖动看连接长出来）'}
+ sl.oninput=function(){show(+sl.value)};show(snaps.length-1);
+ var tv=(D.tone&&D.tone.vec)||[],tn=D.tones||['甜','痛','平','怒','怕'];$('tone').textContent='当前色调：'+tn.map(function(t,i){return[t,tv[i]||0]}).sort(function(a,b){return b[1]-a[1]}).slice(0,3).map(function(x){return x[0]+' '+x[1].toFixed(2)}).join(' · ');
+ var fbOf={};(D.events||[]).forEach(function(e){if(e.source==='recall'&&e.changes){(e.changes.ids||[]).forEach(function(id){fbOf[id]=Object.keys(e.changes.applied||{}).map(function(k){return k+' +'+e.changes.applied[k]}).join(' ')})}});
+ var r=(D.recalls||[]).slice().sort(function(a,b){return(b.resonance||0)-(a.resonance||0)});
+ $('mems').innerHTML=r.length?r.map(function(m){var t=(m.mood||[])[0]||'平',c=TC[t]||'#e6e0ff',rs=m.resonance||0;return'<div class="mem" style="border-left-color:'+c+'"><b style="color:'+c+'">'+esc(t)+'</b>'+esc(m.content)+'<div class="sub2">共振 '+rs.toFixed(2)+' <span style="display:inline-block;width:'+(rs*80).toFixed(0)+'px;height:3px;background:'+c+';vertical-align:middle;border-radius:2px;box-shadow:0 0 6px '+c+'"></span>'+(fbOf[m.id]?'<span class="fb">回流 '+esc(fbOf[m.id])+'</span>':'')+'</div></div>'}).join(''):'<div class="mem" style="border-left-color:#8a7fb0;color:var(--dim)">还没有被想起的旧事回流过情绪。</div>';
+ var ev=(D.events||[]).filter(function(e){return e.source!=='recall'}).slice(0,4);$('evs').innerHTML=ev.length?'<div class="sub2" style="margin-top:12px;color:var(--gold)">最近的波动</div>'+ev.map(function(e){var a=(e.changes&&e.changes.applied)||{},parts=Object.keys(a).map(function(k){var x=a[k],n=typeof x==='number'?x:((x.surface||0)+(x.inner||0));return k+(n>=0?'+':'')+Math.round(n)});return'<div class="ev">['+esc(e.source)+'] '+esc(parts.join(' ')||'—')+' · '+esc(String(e.reason||'说不清').slice(0,40))+'</div>'}).join(''):''}
+function load(k){fetch('/api/emotion-map',{headers:{Authorization:'Bearer '+k}}).then(function(r){if(r.status===401)throw 401;return r.json()}).then(function(D){$('gate').classList.add('hide');$('app').classList.remove('hide');render(D)}).catch(function(e){$('app').classList.add('hide');$('gate').classList.remove('hide');$('err').textContent=e===401?'钥匙不对。':'加载失败。'})}
+$('go').onclick=function(){var k=$('k').value.trim();if(!k)return;try{localStorage.setItem(LS,k)}catch(e){}load(k)};
+(function sky(){var c=$('sky'),x=c.getContext('2d'),dpr=Math.min(2,window.devicePixelRatio||1);function draw(){c.width=innerWidth*dpr;c.height=innerHeight*dpr;x.scale(dpr,dpr);for(var i=0;i<260;i++){x.fillStyle='rgba(230,224,255,'+(Math.random()*.7+.15).toFixed(2)+')';x.beginPath();x.arc(Math.random()*innerWidth,Math.random()*innerHeight,Math.random()*1.3+.2,0,7);x.fill()}}draw();addEventListener('resize',draw)})();
+if(window.__EMO_DATA){$('app').classList.remove('hide');render(window.__EMO_DATA)}else{var k0=getKey();if(k0)load(k0);else $('gate').classList.remove('hide')}
+</script></body></html>

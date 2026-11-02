@@ -5,7 +5,7 @@ import type { MemoryDb } from "./types";
  * 之后每个新 isolate 只需 1 次查询就能跳过 ~25 条串行 DDL（那是手机端 -1001 超时的元凶）。
  * 改了任何 ensure*Schema / 迁移 SQL 时，务必改 SCHEMA_VERSION。
  */
-export const SCHEMA_VERSION = "2026-10-28-cognition-v1";
+export const SCHEMA_VERSION = "2026-11-02-emotion-net-recall-tags-v1";
 let gate: Promise<boolean> | null = null;
 
 export function schemaCurrent(db: MemoryDb): Promise<boolean> {

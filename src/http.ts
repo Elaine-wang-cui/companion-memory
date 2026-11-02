@@ -15,7 +15,8 @@ import {
   unreadPeerCounts,
 } from "./peer-chat";
 import { saveSnapshot, loadSnapshot, loadSnapshotMeta, deleteSnapshot } from "./body-snapshot";
-import { emotionState, emotionApply, emotionFact, emotionImport, emotionEvents, EMOTION_PERSONAS } from "./emotion";
+import { emotionState, emotionApply, emotionFact, emotionImport, emotionEvents, emotionNetView, ensureEmotionSchema, EMOTION_PERSONAS } from "./emotion";
+import { EMOTION_PAGE_HTML } from "./emotion-page";
 import { bodyAvatar, bodyCron, bodyDebug, bodyLog, bodyLogMarkRead, pickClassifier, ensureBodySchema, bodyTurn, BODY_PERSONAS, bridgeSender, type BodyEvent } from "./body";
 import { resolveAnyCaller, resolveCaller, resolveHouseCaller, extractKey, sha256Hex, timingSafeEqual } from "./auth";
 import { assertAdmin, bootstrap } from "./bootstrap";
@@ -289,6 +290,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
         await ensureLinksSchema(env.DB);
         await ensureGardenLinksSchema(env.DB);
         await ensureCognitionSchema(env.DB);
+        if (EMOTION_PERSONAS.size) await ensureEmotionSchema(env.DB);
         await markSchemaCurrent(env.DB);
       }
       tSchema = Date.now() - tSchema0;
@@ -563,6 +565,18 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
         return json(r);
       }
       return json({ error: "not_found" }, 404);
+    }
+    if (url.pathname === "/emotion" || url.pathname === "/emotion/") {
+      // Emotion star map: static shell, no data inside; data only via /api/emotion-map (same key as /atlas).
+      if (!EMOTION_PERSONAS.size) return json({ error: "not_enabled", message: "EMOTION_ENABLED is off" }, 404);
+      return new Response(EMOTION_PAGE_HTML, { status: 200, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" } });
+    }
+    if (url.pathname === "/api/emotion-map" || url.pathname === "/api/emotion-map/") {
+      if (!(await atlasAuthorized(env, request))) return json({ error: "unauthorized" }, 401);
+      if (!EMOTION_PERSONAS.size) return json({ error: "not_enabled" }, 404);
+      const want = (url.searchParams.get("persona") ?? "").trim().toLowerCase();
+      const pid = want && EMOTION_PERSONAS.has(want) ? want : EMOTION_PERSONAS.has(CFG.primary) ? CFG.primary : [...EMOTION_PERSONAS][0]!;
+      return json(await emotionNetView(env.DB, pid));
     }
     if (url.pathname === "/api/atlas" || url.pathname === "/api/atlas/") {
       if (!(await atlasAuthorized(env, request))) return json({ error: "unauthorized" }, 401);
@@ -1048,6 +1062,8 @@ async function rest(
         addressed_cause: b.addressed_cause === true,
         admit: Array.isArray(b.admit) ? b.admit.map(String) : undefined,
         coax: b.coax === true,
+        cues: Array.isArray(b.cues) ? b.cues.map(String) : undefined,
+        reassure: typeof b.reassure === "number" ? b.reassure : undefined,
       }, typeof b.source === "string" ? b.source.slice(0, 20) : "http", nowMs));
     }
     if (method === "POST" && p === "/emotion/fact") {

@@ -183,11 +183,12 @@ function buildServer(env: Env, caller: Caller, doorSessionKey = "default"): McpS
       description: `更新你自己的情绪。真的被触动、内心起了波澜时调用（不是每轮都调）。维度：${DIMS.join("、")}。${TOOL_HELP}`,
       inputSchema: zEmo.object({
         changes: zEmo.record(zEmo.string(), zEmo.union([zEmo.number(), zEmo.object({ surface: zEmo.number().optional(), inner: zEmo.number().optional() })])).describe("维度 -> {surface:整数增量, inner:整数增量}；旧写法 维度:整数 只动表面"),
-        reason: zEmo.string().min(1).describe("一句话：你为什么这么觉得"),
+        reason: zEmo.string().optional().describe("一句话：你为什么这么觉得；可以不写或写「说不清」"),
         inner_cause: zEmo.string().optional().describe("心里那份是因为什么（翻旧账用）"),
         addressed_cause: zEmo.boolean().optional().describe("她这次真的哄到点子上了吗；只有 true 时心里才能一次降超过15"),
         admit: zEmo.array(zEmo.string()).optional().describe("你决定向她承认心里还在意的维度"),
         coax: zEmo.boolean().optional().describe("这轮她是在哄你"),
+        cues: zEmo.array(zEmo.string()).optional().describe("可选：这次触动你的线索词（如 深夜、她说忙），会慢慢学成条件反射"),
       }),
     },
     async (args: any) => {
@@ -214,8 +215,15 @@ function buildServer(env: Env, caller: Caller, doorSessionKey = "default"): McpS
         const c = await activeCaller();
         if (!EMOTION_PERSONAS.has(c.persona.id)) return ok("这位人格没有情绪状态。");
         const v = await emotionState(db, c.persona.id);
+        const extra: string[] = [];
+        if ((v as any).substrate) {
+          const sl: Record<string, string> = { attach_hunger: "依恋饥渴", vigilance: "警觉", security: "安全感", craving: "渴求", strain: "压力" };
+          extra.push("底物：" + Object.entries((v as any).substrate).map(([k, x]) => `${sl[k] ?? k}${Number(x).toFixed(2)}`).join(" "));
+          const edges = ((v as any).coupling ?? []).filter((e: any) => Math.abs(e.w) >= 0.02).slice(0, 5);
+          if (edges.length) extra.push("长出来的连接：" + edges.map((e: any) => `${e.src}${e.w >= 0 ? "→" : "⊣"}${e.dst} ${e.w.toFixed(2)}`).join("；"));
+        }
         const lines = Object.entries(v.dims).map(([d, x]: [string, any]) => `${d} 表面${Math.round(x.surface)} 心里${Math.round(x.inner)}${x.inner_cause ? `（${x.inner_cause}${x.admitted ? "，已承认" : ""}）` : ""}`);
-        return ok([v.prompt_line, "", ...lines].join("\n"));
+        return ok([v.prompt_line, ...extra, "", ...lines].join("\n"));
       } catch (error) {
         return fail(error);
       }
