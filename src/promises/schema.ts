@@ -1,13 +1,11 @@
 /**
  * DDL for the promise tables.
  *
- * The migration file migrations/9000_companion_promises_placeholder.sql
- * repeats this text after a warning banner. A test locks the two copies
- * together. 9000 is a placeholder: before any approved transplant, rename
- * that file to the number after the live database's actual last migration.
- * Source references include 0018_moments.sql and 0019_bottles.sql; that
- * list is incomplete and does not prove 0019 is last. This repo stops at
- * 0017 and is not the live baseline.
+ * migrations/0020_companion_promises.sql repeats this text after a warning
+ * banner. A test locks the two copies together. 0020 follows the highest
+ * migration filename referenced by the live worker source, 0019_bottles.sql.
+ * That database has no d1_migrations ledger. Execute only this file, and
+ * only after a separate user approval. This repo is not the live baseline.
  *
  * These statements create new tables only. They do not read or write
  * garden_entries, unresolved, or memory_pair_checks.

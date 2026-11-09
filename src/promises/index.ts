@@ -2,8 +2,9 @@
  * Isolated promise module for a later, user-approved transplant.
  *
  * Not mounted. Not a deployment. The public repository at ac07fcd is older
- * than the live Worker and must not be published over it. sessionStart,
- * garden_entries, unresolved, and memory_pair_checks are left alone.
+ * than the live Worker and must not be published over it. The port notes
+ * are Docs/deploy/promises-port-to-live-v216.md. sessionStart,
+ * garden entries, unresolved items, and memory-pair checks are left alone.
  * The wake appendix defaults off and does not replace 【未了的事】.
  *
  * Business timezone defaults to America/New_York and stays configurable.

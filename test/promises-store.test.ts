@@ -6,7 +6,7 @@ import { parseSurface } from "../src/promises/zone";
 import { openSyntheticDb } from "./promise-sqlite";
 
 const NY = "America/New_York";
-const MIGRATION = "migrations/9000_companion_promises_placeholder.sql";
+const MIGRATION = "migrations/0020_companion_promises.sql";
 
 async function storeAt(zone = NY) {
   const db = openSyntheticDb();
@@ -20,14 +20,12 @@ function surface(day: string, zone = NY): number {
   return parsed.value;
 }
 
-describe("placeholder migration", () => {
-  it("uses a placeholder number and the same DDL the module applies", () => {
+describe("0020 migration", () => {
+  it("matches the module DDL and only creates tables and indexes if they are missing", () => {
     const file = readFileSync(MIGRATION, "utf8");
-    expect(MIGRATION).toMatch(/9000_/);
-    expect(file).toContain("PLACEHOLDER");
+    expect(MIGRATION).toBe("migrations/0020_companion_promises.sql");
     expect(file).toContain("0019_bottles.sql");
-    expect(file).toContain("重新编号");
-    expect(file).not.toMatch(/^0018_/);
+    expect(file).toContain("yanyan-memory");
     const ddl = file
       .split("\n")
       .filter((line) => !line.trim().startsWith("--"))
@@ -37,36 +35,74 @@ describe("placeholder migration", () => {
     expect(PROMISE_SCHEMA_SQL).not.toContain("garden_entries");
     expect(PROMISE_SCHEMA_SQL).not.toContain("unresolved");
     expect(PROMISE_SCHEMA_SQL).not.toContain("memory_pair_checks");
+    expect(PROMISE_SCHEMA_SQL).not.toMatch(/\b(ALTER|DROP)\b/);
     for (const statement of promiseSchemaStatements()) {
-      expect(statement.startsWith("CREATE")).toBe(true);
+      expect(
+        statement.startsWith("CREATE TABLE IF NOT EXISTS") || statement.startsWith("CREATE UNIQUE INDEX IF NOT EXISTS") || statement.startsWith("CREATE INDEX IF NOT EXISTS"),
+      ).toBe(true);
+      expect(statement).not.toMatch(/\b(ALTER|DROP)\b/);
     }
   });
 
-  it("applies from the migration file without touching the older tables", () => {
+  it("can run twice and does not touch tables that were already there", () => {
     const file = readFileSync(MIGRATION, "utf8");
     const db = openSyntheticDb();
     db.raw.exec(`
       CREATE TABLE garden_entries (id TEXT PRIMARY KEY, kind TEXT, body TEXT);
       CREATE TABLE unresolved (id TEXT PRIMARY KEY, content TEXT, status TEXT);
       CREATE TABLE memory_pair_checks (a TEXT, b TEXT, verdict TEXT, checked_at TEXT);
+      CREATE TABLE companion_notes (id TEXT PRIMARY KEY, persona_id TEXT, content TEXT);
+      CREATE TABLE emotion_pending (id TEXT PRIMARY KEY, persona_id TEXT, payload TEXT);
+      CREATE INDEX idx_garden_entries_kind ON garden_entries (kind);
       INSERT INTO garden_entries (id, kind, body) VALUES ('g1', 'promise', 'old-garden-note');
       INSERT INTO unresolved (id, content, status) VALUES ('u1', 'old-open-loop', 'open');
       INSERT INTO memory_pair_checks (a, b, verdict, checked_at) VALUES ('m1', 'm2', 'same', '2026-01-01T00:00:00.000Z');
+      INSERT INTO companion_notes (id, persona_id, content) VALUES ('n1', 'synthetic', 'keep-note');
+      INSERT INTO emotion_pending (id, persona_id, payload) VALUES ('e1', 'synthetic', 'keep-emotion');
     `);
-    db.raw.exec(file);
-    const names = db.raw.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`).all() as { name: string }[];
+    const before = preexistingCatalog(db);
+    expect(() => db.raw.exec(file)).not.toThrow();
+    db.raw
+      .prepare(
+        `INSERT INTO companion_promises
+           (id, persona_id, author, "text", due_at, surface_at, checked_by, checked_at, resolution, status, created_at)
+         VALUES ('synthetic-1', 'synthetic-persona', 'chu', 'synthetic', NULL, NULL, NULL, NULL, NULL, 'open', '2026-11-09T00:00:00.000Z')`,
+      )
+      .run();
+    expect(() => db.raw.exec(file)).not.toThrow();
+    expect(preexistingCatalog(db)).toEqual(before);
+    expect(db.raw.prepare(`SELECT body FROM garden_entries`).get()).toEqual({ body: "old-garden-note" });
+    expect(db.raw.prepare(`SELECT content, status FROM unresolved`).get()).toEqual({ content: "old-open-loop", status: "open" });
+    expect(db.raw.prepare(`SELECT checked_at FROM memory_pair_checks`).get()).toEqual({ checked_at: "2026-01-01T00:00:00.000Z" });
+    expect(db.raw.prepare(`SELECT content FROM companion_notes`).get()).toEqual({ content: "keep-note" });
+    expect(db.raw.prepare(`SELECT payload FROM emotion_pending`).get()).toEqual({ payload: "keep-emotion" });
+    expect(db.raw.prepare(`SELECT COUNT(*) AS n FROM companion_promises`).get()).toEqual({ n: 1 });
+    expect(db.raw.prepare(`SELECT "text" AS promise_text FROM companion_promises`).get()).toEqual({ promise_text: "synthetic" });
+    const names = db.raw.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`).all() as {
+      name: string;
+    }[];
     expect(names.map((row) => row.name)).toEqual([
+      "companion_notes",
       "companion_promise_replies",
       "companion_promises",
+      "emotion_pending",
       "garden_entries",
       "memory_pair_checks",
       "unresolved",
     ]);
-    expect(db.raw.prepare(`SELECT body FROM garden_entries`).get()).toEqual({ body: "old-garden-note" });
-    expect(db.raw.prepare(`SELECT content, status FROM unresolved`).get()).toEqual({ content: "old-open-loop", status: "open" });
-    expect(db.raw.prepare(`SELECT checked_at FROM memory_pair_checks`).get()).toEqual({ checked_at: "2026-01-01T00:00:00.000Z" });
   });
 });
+
+function preexistingCatalog(db: ReturnType<typeof openSyntheticDb>) {
+  const rows = db.raw
+    .prepare(
+      `SELECT type, name, tbl_name, sql FROM sqlite_master
+       WHERE name NOT LIKE 'sqlite_%' AND name NOT LIKE '%companion_promise%'
+       ORDER BY type, name`,
+    )
+    .all();
+  return JSON.parse(JSON.stringify(rows));
+}
 
 describe("promise store", () => {
   it("writes due only from the page and surface only from content", async () => {

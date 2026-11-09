@@ -1,20 +1,28 @@
--- PLACEHOLDER MIGRATION NUMBER 9000.
--- This file is not the next live migration and must not be applied to the
--- live D1 database. Do not run `wrangler d1 migrations apply --remote`.
--- Do not deploy this repository's Worker over the live Worker.
+-- 0020_companion_promises.sql
+-- Repeatable. Every statement is CREATE TABLE IF NOT EXISTS or
+-- CREATE INDEX IF NOT EXISTS. No ALTER. No DROP.
+-- Running this file twice does not change tables that already exist.
 --
--- Public companion-memory main stops at migrations/0017_memory_tags.sql.
--- Live source references include 0018_moments.sql and 0019_bottles.sql.
--- That filename list is incomplete: it does not prove those numbers exist
--- as applied migrations, and it does not prove 0019 is the last one.
--- Before a user-approved transplant, rename this file to
--- (live database's actual last migration number + 1) and re-port the
--- module onto the live source. Do not replay 0001–0017 onto that database.
--- 上线前必须按线上实际最后一条迁移重新编号，并经用户批准后再移植。不得把本仓库整包覆盖线上。
+-- Live D1, from a read-only check that did not read row contents:
+--   database_name = yanyan-memory
+--   database_id   = edadcb8c-94c7-4cb3-a828-8f84739f5fa7
+--   binding       = DB
+-- That database has no d1_migrations table, so it is not on the standard
+-- wrangler migration ledger. Do not apply this repository's migrations
+-- directory. After a separate user approval, execute only this file.
 --
--- New tables only. Do not copy rows from garden_entries (including
--- kind = 'promise') or from unresolved. Do not write memory_pair_checks.
--- checked_at here is the promise check, not the memory-pair column.
+-- The live worker source's highest referenced migration filename is
+-- 0019_bottles.sql. Whether that file has been applied is still 待核对.
+-- If a later check finds a higher referenced migration, rename this file
+-- before executing it. The same check found no companion_promises,
+-- companion_promise_replies, or any other promise/surface table.
+-- companion_notes and emotion_pending are unrelated and must be left alone.
+--
+-- This public repository is not the live worker. Do not deploy it.
+-- Do not copy garden_entries or unresolved into these tables.
+-- checked_at here is the promise check, not memory_pair_checks.
+-- See Docs/deploy/promises-port-to-live-v216.md. Every live step needs
+-- its own user approval.
 
 CREATE TABLE IF NOT EXISTS companion_promises (
   id TEXT PRIMARY KEY,
